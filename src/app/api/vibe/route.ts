@@ -21,7 +21,7 @@ CRITICAL: Your response MUST be MAXIMUM 2 sentences. Not 3. Not 4. Exactly 1 or 
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 60
+        max_tokens: 150
       })
     }
   )
