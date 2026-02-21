@@ -21,20 +21,12 @@ Be funny, real, and student-friendly. No corporate speak. Return only the messag
     }
   )
 
-  if (!response.ok) {
-    console.error('Gemini API error:', response.status, await response.text())
-    return NextResponse.json({ message: 'Stay focused! (API unavailable)' })
-  }
-
   const data = await response.json()
   
-  // Gemini API returns: { candidates: [{ content: { parts: [{ text: "..." }] } }] }
-  const message = data?.candidates?.[0]?.content?.parts?.[0]?.text
-  
-  if (!message) {
-    console.error('Unexpected Gemini response structure:', JSON.stringify(data))
-    return NextResponse.json({ message: 'Stay focused! You got this!' })
+  if (!response.ok) {
+    return NextResponse.json({ message: JSON.stringify(data) })
   }
 
-  return NextResponse.json({ message: message.trim() })
+  const message = data?.candidates?.[0]?.content?.parts?.[0]?.text
+  return NextResponse.json({ message: message?.trim() ?? 'Stay focused!' })
 }
