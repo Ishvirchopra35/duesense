@@ -1,9 +1,6 @@
-import OpenAI from 'openai'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  
   const { panicScore, title, hoursLeft } = await req.json()
 
   const prompt = `You are a slightly sarcastic but supportive student productivity coach. 
@@ -13,11 +10,19 @@ Panic score: ${panicScore}/100
 Hours left: ${hoursLeft}
 Be funny, real, and student-friendly. No corporate speak. Return only the message.`
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 80,
-  })
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
+    }
+  )
 
-  return NextResponse.json({ message: completion.choices[0].message.content })
+  const data = await response.json()
+  const message = data.candidates?.[0]?.content?.parts?.[0]?.text ?? 'Stay focused!'
+
+  return NextResponse.json({ message })
 }
