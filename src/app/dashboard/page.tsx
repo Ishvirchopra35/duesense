@@ -113,10 +113,14 @@ export default function DashboardPage() {
         method: "POST",
       });
 
-      const result: { url?: string; error?: string } = await response.json();
+      const contentType = response.headers.get("content-type") ?? "";
+      const result: { url?: string; error?: string } = contentType.includes("application/json")
+        ? await response.json()
+        : {};
 
       if (!response.ok || !result.url) {
-        throw new Error(result.error ?? "Unable to start checkout.");
+        const fallbackText = !contentType.includes("application/json") ? await response.text() : "";
+        throw new Error(result.error ?? fallbackText || "Unable to start checkout.");
       }
 
       window.location.href = result.url;
