@@ -13,6 +13,8 @@ type Assignment = {
   estimated_hours: number;
 };
 
+type SubscriptionStatus = "free" | "premium";
+
 function formatCountdown(deadline: string, nowMs: number) {
   const diffMs = new Date(deadline).getTime() - nowMs;
 
@@ -45,13 +47,17 @@ export default function DashboardPage() {
   const [vibeLoading, setVibeLoading] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("free");
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAssignmentLimitModalOpen, setIsAssignmentLimitModalOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState("");
   const [deadline, setDeadline] = useState("");
   const [estimatedHours, setEstimatedHours] = useState("1");
   const [saving, setSaving] = useState(false);
+  const [diagnoseLimitReached, setDiagnoseLimitReached] = useState<Record<string, boolean>>({});
 
   const loadAssignments = useCallback(async (currentUserId: string) => {
     const { data, error: fetchError } = await supabase
@@ -68,6 +74,57 @@ export default function DashboardPage() {
 
     setAssignments((data ?? []) as Assignment[]);
   }, [supabase]);
+
+  const loadSubscriptionStatus = useCallback(async (currentUserId: string) => {
+    const { data, error: subscriptionError } = await supabase
+      .from("subscriptions")
+      .select("status")
+      .eq("user_id", currentUserId)
+      .maybeSingle();
+
+    if (subscriptionError) {
+      setError(subscriptionError.message);
+      return;
+    }
+
+    if (!data) {
+      const { error: insertError } = await supabase
+        .from("subscriptions")
+        .insert({ user_id: currentUserId, status: "free" });
+
+      if (insertError) {
+        setError(insertError.message);
+        return;
+      }
+
+      setSubscriptionStatus("free");
+      return;
+    }
+
+    setSubscriptionStatus(data.status === "premium" ? "premium" : "free");
+  }, [supabase]);
+
+  const startUpgradeCheckout = useCallback(async () => {
+    setUpgradeLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/stripe/checkout", {
+        method: "POST",
+      });
+
+      const result: { url?: string; error?: string } = await response.json();
+
+      if (!response.ok || !result.url) {
+        throw new Error(result.error ?? "Unable to start checkout.");
+      }
+
+      window.location.href = result.url;
+    } catch (checkoutError) {
+      setError(checkoutError instanceof Error ? checkoutError.message : "Unable to start checkout.");
+      setUpgradeLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
@@ -91,6 +148,7 @@ export default function DashboardPage() {
       }
 
       setUserId(user.id);
+      await loadSubscriptionStatus(user.id);
       await loadAssignments(user.id);
       if (mounted) {
         setIsLoading(false);
@@ -111,11 +169,17 @@ export default function DashboardPage() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadAssignments, router, supabase]);
+  }, [loadAssignments, loadSubscriptionStatus, router, supabase]);
 
   const handleAddAssignment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!userId) return;
+
+    if (subscriptionStatus === "free" && assignments.length >= 5) {
+      setIsModalOpen(false);
+      setIsAssignmentLimitModalOpen(true);
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -170,6 +234,44 @@ export default function DashboardPage() {
   };
 
   const handleVibe = async (assignment: Assignment) => {
+    if (!userId) return;
+
+    if (subscriptionStatus === "free") {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(startOfDay);
+      endOfDay.setDate(endOfDay.getDate() + 1);
+
+      const { count, error: usageCountError } = await supabase
+        .from("diagnose_usage")
+        .select("user_id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .gte("used_at", startOfDay.toISOString())
+        .lt("used_at", endOfDay.toISOString());
+
+      if (usageCountError) {
+        setError(usageCountError.message);
+        return;
+      }
+
+      if ((count ?? 0) >= 5) {
+        setDiagnoseLimitReached((prev) => ({ ...prev, [assignment.id]: true }));
+        return;
+      }
+
+      const { error: usageInsertError } = await supabase.from("diagnose_usage").insert({
+        user_id: userId,
+        used_at: new Date().toISOString(),
+      });
+
+      if (usageInsertError) {
+        setError(usageInsertError.message);
+        return;
+      }
+    }
+
+    setDiagnoseLimitReached((prev) => ({ ...prev, [assignment.id]: false }));
+
     const { hoursLeft } = formatCountdown(assignment.deadline, nowMs);
     const panicScore = calcPanicScore(assignment.deadline, assignment.estimated_hours);
 
@@ -213,7 +315,18 @@ export default function DashboardPage() {
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">DueSense Dashboard</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold tracking-tight text-white">DueSense Dashboard</h1>
+              <span
+                className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${
+                  subscriptionStatus === "premium"
+                    ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                    : "border-slate-600 bg-slate-800 text-slate-300"
+                }`}
+              >
+                {subscriptionStatus === "premium" ? "PREMIUM" : "FREE"}
+              </span>
+            </div>
             <p className="text-sm text-slate-400">Live deadline tracking with panic intelligence.</p>
           </div>
           <div className="flex items-center gap-3">
@@ -273,14 +386,25 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleVibe(assignment)}
-                    disabled={vibeLoading[assignment.id]}
-                    className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
-                  </button>
+                  {diagnoseLimitReached[assignment.id] ? (
+                    <button
+                      type="button"
+                      onClick={() => void startUpgradeCheckout()}
+                      disabled={upgradeLoading}
+                      className="rounded-lg bg-indigo-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {upgradeLoading ? "Redirecting..." : "Upgrade"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleVibe(assignment)}
+                      disabled={vibeLoading[assignment.id]}
+                      className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDelete(assignment.id)}
@@ -293,6 +417,12 @@ export default function DashboardPage() {
                 {vibes[assignment.id] ? (
                   <p className="rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm text-slate-200">
                     {vibes[assignment.id]}
+                  </p>
+                ) : null}
+
+                {diagnoseLimitReached[assignment.id] ? (
+                  <p className="rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-200">
+                    Daily limit reached — upgrade for unlimited
                   </p>
                 ) : null}
               </article>
@@ -388,6 +518,34 @@ export default function DashboardPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isAssignmentLimitModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-black/40">
+            <p className="text-base text-slate-100">
+              Free plan is limited to 5 assignments. Upgrade to Premium for $2.99/month for unlimited.
+            </p>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAssignmentLimitModalOpen(false)}
+                className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void startUpgradeCheckout()}
+                disabled={upgradeLoading}
+                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {upgradeLoading ? "Redirecting..." : "Upgrade"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
