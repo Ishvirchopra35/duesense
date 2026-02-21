@@ -7,7 +7,7 @@ A Next.js student deadline tracker with panic intelligence and AI-powered motiva
 - 🔐 Supabase email/password authentication
 - 📊 Live countdown timers for all assignments
 - 🎯 Panic score calculation (red/orange/green zones)
-- 🤖 AI-powered motivational messages via Gemini API
+- 🤖 AI-powered motivational messages via Groq API (Llama 3.3)
 - 🌙 Dark theme with Space Mono font
 - ✨ Clean, minimal UI with Tailwind CSS
 
@@ -24,7 +24,7 @@ npm install
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
 ```
 
 4. Set up your Supabase database with an `assignments` table:
@@ -54,12 +54,12 @@ npm run dev
 - **Framework**: Next.js 16 (App Router)
 - **Styling**: Tailwind CSS 4
 - **Auth & Database**: Supabase
-- **AI**: Google Gemini API
+- **AI**: Groq API (Llama 3.3 70B)
 - **Font**: Space Mono (Google Fonts)
 
 ## Environment Variables
 
 - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anonymous key
-- `GEMINI_API_KEY` - Your Google Gemini API key (get it from [Google AI Studio](https://makersuite.google.com/app/apikey))
+- `GROQ_API_KEY` - Your Groq API key (get it from [Groq Console](https://console.groq.com/keys))
 
