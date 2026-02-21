@@ -216,13 +216,25 @@ export default function DashboardPage() {
             <h1 className="text-3xl font-bold tracking-tight text-white">DueSense Dashboard</h1>
             <p className="text-sm text-slate-400">Live deadline tracking with panic intelligence.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400"
-          >
-            + Add Assignment
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400"
+            >
+              + Add Assignment
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await supabase.auth.signOut();
+                router.push("/");
+              }}
+              className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800"
+            >
+              Logout
+            </button>
+          </div>
         </header>
 
         {error ? (
@@ -233,7 +245,7 @@ export default function DashboardPage() {
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {assignments.map((assignment) => {
-            const { label, hoursLeft } = formatCountdown(assignment.deadline, nowMs);
+            const { label } = formatCountdown(assignment.deadline, nowMs);
             const panicScore = calcPanicScore(assignment.deadline, assignment.estimated_hours);
             const panicColor = getPanicColor(panicScore);
             const panicLabel = getPanicLabel(panicScore);
@@ -267,7 +279,7 @@ export default function DashboardPage() {
                     disabled={vibeLoading[assignment.id]}
                     className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {vibeLoading[assignment.id] ? "Thinking..." : "Get Vibe"}
+                    {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
                   </button>
                   <button
                     type="button"
@@ -283,8 +295,6 @@ export default function DashboardPage() {
                     {vibes[assignment.id]}
                   </p>
                 ) : null}
-
-                <p className="text-xs text-slate-500">Hours left: {Math.max(0, hoursLeft).toFixed(1)}</p>
               </article>
             );
           })}

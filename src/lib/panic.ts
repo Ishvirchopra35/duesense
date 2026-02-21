@@ -16,7 +16,7 @@ export function getPanicColor(score: number): string {
 }
 
 export function getPanicLabel(score: number): string {
-  if (score >= 75) return '🔥 PANIC MODE'
-  if (score >= 40) return '⚠️ Getting Spicy'
-  return '😎 Chill Zone'
+  if (score >= 75) return 'Code Red'
+  if (score >= 40) return 'Heating Up'
+  return 'All Good'
 }
