@@ -8,7 +8,7 @@ Assignment: "${title}"
 Panic score: ${panicScore}/100
 Hours left: ${hoursLeft}
 
-Give 1-2 short punchy sentences. Dry humor. No motivational poster vibes. No quotes. Just straight talk.`
+CRITICAL: Your response MUST be MAXIMUM 2 sentences. Not 3. Not 4. Exactly 1 or 2 sentences only. Short, punchy, dry humor. No quotes. If you write more than 2 sentences, you failed.`
 
   const response = await fetch(
     'https://api.groq.com/openai/v1/chat/completions',
@@ -21,7 +21,7 @@ Give 1-2 short punchy sentences. Dry humor. No motivational poster vibes. No quo
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 100
+        max_tokens: 60
       })
     }
   )
