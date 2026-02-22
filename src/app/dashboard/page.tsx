@@ -36,6 +36,8 @@ function formatCountdown(deadline: string, nowMs: number) {
   };
 }
 
+const FREEMIUM_ENABLED = process.env.NEXT_PUBLIC_ENABLE_FREEMIUM === "true";
+
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -76,6 +78,11 @@ export default function DashboardPage() {
   }, [supabase]);
 
   const loadSubscriptionStatus = useCallback(async (currentUserId: string) => {
+    if (!FREEMIUM_ENABLED) {
+      setSubscriptionStatus("premium");
+      return;
+    }
+
     const { data, error: subscriptionError } = await supabase
       .from("subscriptions")
       .select("status")
@@ -179,7 +186,7 @@ export default function DashboardPage() {
     event.preventDefault();
     if (!userId) return;
 
-    if (subscriptionStatus === "free" && assignments.length >= 5) {
+    if (FREEMIUM_ENABLED && subscriptionStatus === "free" && assignments.length >= 5) {
       setIsModalOpen(false);
       setIsAssignmentLimitModalOpen(true);
       return;
@@ -240,7 +247,7 @@ export default function DashboardPage() {
   const handleVibe = async (assignment: Assignment) => {
     if (!userId) return;
 
-    if (subscriptionStatus === "free") {
+    if (FREEMIUM_ENABLED && subscriptionStatus === "free") {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(startOfDay);
@@ -321,15 +328,17 @@ export default function DashboardPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-bold tracking-tight text-white">DueSense Dashboard</h1>
-              <span
-                className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${
-                  subscriptionStatus === "premium"
-                    ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                    : "border-slate-600 bg-slate-800 text-slate-300"
-                }`}
-              >
-                {subscriptionStatus === "premium" ? "PREMIUM" : "FREE"}
-              </span>
+              {FREEMIUM_ENABLED && (
+                <span
+                  className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${
+                    subscriptionStatus === "premium"
+                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                      : "border-slate-600 bg-slate-800 text-slate-300"
+                  }`}
+                >
+                  {subscriptionStatus === "premium" ? "PREMIUM" : "FREE"}
+                </span>
+              )}
             </div>
             <p className="text-sm text-slate-400">Live deadline tracking with panic intelligence.</p>
           </div>
@@ -526,7 +535,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {isAssignmentLimitModalOpen ? (
+      {isAssignmentLimitModalOpen && FREEMIUM_ENABLED ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
           <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-black/40">
             <p className="text-base text-slate-100">
