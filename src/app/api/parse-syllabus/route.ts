@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import PDFParser from "pdf2json";
 
 type ParsedAssignment = {
   title?: string;
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
 
     const mimeType = file.type || "application/octet-stream";
     const isImage = mimeType.startsWith("image/");
+    const isPdf = mimeType === "application/pdf";
 
     let messages;
 
@@ -63,6 +65,28 @@ export async function POST(request: Request) {
               image_url: { url: `data:${mimeType};base64,${base64}` },
             },
           ],
+        },
+      ];
+    } else if (isPdf) {
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const text = await new Promise<string>((resolve, reject) => {
+        const parser = new PDFParser();
+        parser.on("pdfParser_dataReady", (data) => {
+          const extracted = data.Pages.flatMap((page) =>
+            page.Texts.map((t) => { try { return decodeURIComponent(t.R[0].T) } catch { return t.R[0].T } })
+          ).join(" ");
+          resolve(extracted);
+        });
+        parser.on("pdfParser_dataError", reject);
+        parser.parseBuffer(buffer);
+      });
+
+      messages = [
+        {
+          role: "user",
+          content: `${PROMPT}\n\nDocument content:\n${text}`,
         },
       ];
     } else {
