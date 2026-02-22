@@ -3,6 +3,8 @@
 import { calcPanicScore, getPanicColor, getPanicLabel } from "@/lib/panic";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
+import { Moon, Sun } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Assignment = {
@@ -42,6 +44,8 @@ const FREEMIUM_ENABLED = process.env.NEXT_PUBLIC_ENABLE_FREEMIUM === "true";
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
   const [nowMs, setNowMs] = useState(Date.now());
   const [userId, setUserId] = useState<string | null>(null);
@@ -142,6 +146,10 @@ export default function DashboardPage() {
   useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
   }, []);
 
   useEffect(() => {
@@ -410,27 +418,36 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100 md:px-8">
+    <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100 md:px-8 dark:bg-slate-950 dark:text-slate-100 light:bg-white light:text-slate-900">
       <div className="mx-auto max-w-6xl space-y-6">
-        <header className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30 md:flex-row md:items-center md:justify-between">
+        <header className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30 md:flex-row md:items-center md:justify-between dark:border-slate-800 dark:bg-slate-900/80 light:border-slate-300 light:bg-white/50">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight text-white">DueSense Dashboard</h1>
+              <h1 className="text-3xl font-bold tracking-tight text-white dark:text-white light:text-slate-900">DueSense Dashboard</h1>
               {FREEMIUM_ENABLED && (
                 <span
                   className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${
                     subscriptionStatus === "premium"
                       ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                      : "border-slate-600 bg-slate-800 text-slate-300"
+                      : "border-slate-600 bg-slate-800 text-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 light:border-slate-400 light:bg-slate-200 light:text-slate-600"
                   }`}
                 >
                   {subscriptionStatus === "premium" ? "PREMIUM" : "FREE"}
                 </span>
               )}
             </div>
-            <p className="text-sm text-slate-400">Live deadline tracking with panic intelligence.</p>
+            <p className="text-sm text-slate-400 dark:text-slate-400 light:text-slate-600">Live deadline tracking with panic intelligence.</p>
           </div>
           <div className="flex items-center gap-3">
+            {mounted && (
+              <button
+                type="button"
+                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+                className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 light:border-slate-300 light:text-slate-600 light:hover:bg-slate-100"
+              >
+                {theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -451,7 +468,7 @@ export default function DashboardPage() {
                 await supabase.auth.signOut();
                 router.push("/");
               }}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800"
+              className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 light:border-slate-300 light:text-slate-600 light:hover:bg-slate-100"
             >
               Logout
             </button>
@@ -459,7 +476,7 @@ export default function DashboardPage() {
         </header>
 
         {error ? (
-          <p className="rounded-lg border border-rose-900 bg-rose-950/50 px-4 py-3 text-sm text-rose-300">
+          <p className="rounded-lg border border-rose-900 bg-rose-950/50 px-4 py-3 text-sm text-rose-300 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300 light:border-rose-300 light:bg-rose-100 light:text-rose-700">
             {error}
           </p>
         ) : null}
@@ -478,16 +495,16 @@ export default function DashboardPage() {
             return (
               <article
                 key={assignment.id}
-                className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl shadow-black/20"
+                className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl shadow-black/20 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-black/20 light:border-slate-300 light:bg-white light:shadow-slate-200/50"
               >
                 <div className="space-y-1">
-                  <h2 className="text-xl font-bold text-white">{assignment.title}</h2>
-                  <p className="text-sm text-slate-400">{assignment.course}</p>
+                  <h2 className="text-xl font-bold text-white dark:text-white light:text-slate-900">{assignment.title}</h2>
+                  <p className="text-sm text-slate-400 dark:text-slate-400 light:text-slate-600">{assignment.course}</p>
                 </div>
 
-                <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Countdown</p>
-                  <p className="mt-1 text-lg font-bold text-cyan-300">{label}</p>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70 light:border-slate-300 light:bg-slate-50">
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-500 light:text-slate-600">Countdown</p>
+                  <p className="mt-1 text-lg font-bold text-cyan-300 dark:text-cyan-300 light:text-cyan-600">{label}</p>
                 </div>
 
                 <div
@@ -512,7 +529,7 @@ export default function DashboardPage() {
                       type="button"
                       onClick={() => handleVibe(assignment)}
                       disabled={vibeLoading[assignment.id]}
-                      className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-950 light:text-slate-900"
                     >
                       {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
                     </button>
@@ -520,34 +537,34 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={() => handleEditAssignment(assignment)}
-                    className="rounded-lg border border-blue-700 px-3 py-2 text-sm text-blue-300 transition hover:bg-blue-950/40"
+                    className="rounded-lg border border-blue-700 px-3 py-2 text-sm text-blue-300 transition hover:bg-blue-950/40 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/40 light:border-blue-500 light:text-blue-600 light:hover:bg-blue-50"
                   >
                     Edit
                   </button>
                   <button
                     type="button"
                     onClick={() => handleCompleteAssignment(assignment.id)}
-                    className="rounded-lg border border-emerald-700 px-3 py-2 text-sm text-emerald-300 transition hover:bg-emerald-950/40"
+                    className="rounded-lg border border-emerald-700 px-3 py-2 text-sm text-emerald-300 transition hover:bg-emerald-950/40 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40 light:border-emerald-500 light:text-emerald-600 light:hover:bg-emerald-50"
                   >
                     Done
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDelete(assignment.id)}
-                    className="rounded-lg border border-rose-700 px-3 py-2 text-sm text-rose-300 transition hover:bg-rose-950/40"
+                    className="rounded-lg border border-rose-700 px-3 py-2 text-sm text-rose-300 transition hover:bg-rose-950/40 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40 light:border-rose-500 light:text-rose-600 light:hover:bg-rose-50"
                   >
                     Delete
                   </button>
                 </div>
 
                 {vibes[assignment.id] ? (
-                  <p className="rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm text-slate-200">
+                  <p className="rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm text-slate-200 dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-200 light:border-slate-300 light:bg-slate-100 light:text-slate-700">
                     {vibes[assignment.id]}
                   </p>
                 ) : null}
 
                 {diagnoseLimitReached[assignment.id] ? (
-                  <p className="rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-200">
+                  <p className="rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-200 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200 light:border-amber-400 light:bg-amber-50 light:text-amber-700">
                     Daily limit reached — upgrade for unlimited
                   </p>
                 ) : null}
@@ -560,7 +577,7 @@ export default function DashboardPage() {
 
           {assignments.filter((a) => a.completed).length > 0 && (
             <div>
-              <h3 className="mb-4 text-lg font-semibold text-slate-400">Completed</h3>
+              <h3 className="mb-4 text-lg font-semibold text-slate-400 dark:text-slate-400 light:text-slate-600">Completed</h3>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {assignments
                   .filter((a) => a.completed)
@@ -568,30 +585,30 @@ export default function DashboardPage() {
                     return (
                       <article
                         key={assignment.id}
-                        className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/30 p-5 shadow-xl shadow-black/20 opacity-60"
+                        className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/30 p-5 shadow-xl shadow-black/20 opacity-60 dark:border-slate-800 dark:bg-slate-900/30 dark:shadow-black/20 light:border-slate-300 light:bg-slate-100 light:shadow-slate-200/30"
                       >
                         <div className="space-y-1">
-                          <h2 className="text-xl font-bold text-white line-through">{assignment.title}</h2>
-                          <p className="text-sm text-slate-400 line-through">{assignment.course}</p>
+                          <h2 className="text-xl font-bold text-white line-through dark:text-white light:text-slate-900">{assignment.title}</h2>
+                          <p className="text-sm text-slate-400 line-through dark:text-slate-400 light:text-slate-600">{assignment.course}</p>
                         </div>
 
-                        <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                          <p className="text-xs uppercase tracking-wide text-slate-500">Deadline</p>
-                          <p className="mt-1 text-sm text-slate-300 line-through">{new Date(assignment.deadline).toLocaleString()}</p>
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70 light:border-slate-300 light:bg-slate-50">
+                          <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-500 light:text-slate-600">Deadline</p>
+                          <p className="mt-1 text-sm text-slate-300 line-through dark:text-slate-300 light:text-slate-700">{new Date(assignment.deadline).toLocaleString()}</p>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => handleUndoAssignment(assignment.id)}
-                            className="rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-300 transition hover:bg-amber-950/40"
+                            className="rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-300 transition hover:bg-amber-950/40 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/40 light:border-amber-500 light:text-amber-600 light:hover:bg-amber-50"
                           >
                             Undo
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(assignment.id)}
-                            className="rounded-lg border border-rose-700 px-3 py-2 text-sm text-rose-300 transition hover:bg-rose-950/40"
+                            className="rounded-lg border border-rose-700 px-3 py-2 text-sm text-rose-300 transition hover:bg-rose-950/40 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40 light:border-rose-500 light:text-rose-600 light:hover:bg-rose-50"
                           >
                             Delete
                           </button>
@@ -605,20 +622,20 @@ export default function DashboardPage() {
         </section>
 
         {assignments.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center text-slate-400">
+          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center text-slate-400 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-400 light:border-slate-400 light:bg-slate-100 light:text-slate-600">
             No assignments yet. Add your first deadline.
           </div>
         ) : null}
       </div>
 
       {isModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-black/40">
-            <h2 className="mb-4 text-xl font-bold text-white">{editingId ? "Edit Assignment" : "New Assignment"}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 dark:bg-slate-950/80 light:bg-slate-900/50">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-black/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40 light:border-slate-300 light:bg-white light:shadow-slate-300/40">
+            <h2 className="mb-4 text-xl font-bold text-white dark:text-white light:text-slate-900">{editingId ? "Edit Assignment" : "New Assignment"}</h2>
 
             <form onSubmit={handleAddAssignment} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="title" className="text-sm text-slate-300">
+                <label htmlFor="title" className="text-sm text-slate-300 dark:text-slate-300 light:text-slate-700">
                   Title
                 </label>
                 <input
@@ -627,12 +644,12 @@ export default function DashboardPage() {
                   required
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 light:border-slate-300 light:bg-white light:text-slate-900 light:ring-indigo-500/30"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="course" className="text-sm text-slate-300">
+                <label htmlFor="course" className="text-sm text-slate-300 dark:text-slate-300 light:text-slate-700">
                   Course
                 </label>
                 <input
@@ -641,12 +658,12 @@ export default function DashboardPage() {
                   required
                   value={course}
                   onChange={(event) => setCourse(event.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 light:border-slate-300 light:bg-white light:text-slate-900 light:ring-indigo-500/30"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="deadline" className="text-sm text-slate-300">
+                <label htmlFor="deadline" className="text-sm text-slate-300 dark:text-slate-300 light:text-slate-700">
                   Deadline
                 </label>
                 <input
@@ -655,12 +672,12 @@ export default function DashboardPage() {
                   required
                   value={deadline}
                   onChange={(event) => setDeadline(event.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 light:border-slate-300 light:bg-white light:text-slate-900 light:ring-indigo-500/30"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="estimatedHours" className="text-sm text-slate-300">
+                <label htmlFor="estimatedHours" className="text-sm text-slate-300 dark:text-slate-300 light:text-slate-700">
                   Estimated Hours
                 </label>
                 <input
@@ -671,7 +688,7 @@ export default function DashboardPage() {
                   required
                   value={estimatedHours}
                   onChange={(event) => setEstimatedHours(event.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 light:border-slate-300 light:bg-white light:text-slate-900 light:ring-indigo-500/30"
                 />
               </div>
 
@@ -679,7 +696,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800"
+                  className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 light:border-slate-300 light:text-slate-600 light:hover:bg-slate-100"
                 >
                   Cancel
                 </button>
@@ -697,9 +714,9 @@ export default function DashboardPage() {
       ) : null}
 
       {isAssignmentLimitModalOpen && FREEMIUM_ENABLED ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-black/40">
-            <p className="text-base text-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 dark:bg-slate-950/80 light:bg-slate-900/50">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-black/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40 light:border-slate-300 light:bg-white light:shadow-slate-300/40">
+            <p className="text-base text-slate-100 dark:text-slate-100 light:text-slate-900">
               Free plan is limited to 5 assignments. Upgrade to Premium for $2.99/month for unlimited.
             </p>
 
@@ -707,7 +724,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setIsAssignmentLimitModalOpen(false)}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800"
+                className="rounded-lg border border-slate-700 px-4 py-2 text-slate-300 transition hover:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 light:border-slate-300 light:text-slate-600 light:hover:bg-slate-100"
               >
                 Cancel
               </button>
