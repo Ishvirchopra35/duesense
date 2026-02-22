@@ -59,6 +59,7 @@ export default function DashboardPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAssignmentLimitModalOpen, setIsAssignmentLimitModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState("");
@@ -66,6 +67,9 @@ export default function DashboardPage() {
   const [estimatedHours, setEstimatedHours] = useState("1");
   const [saving, setSaving] = useState(false);
   const [diagnoseLimitReached, setDiagnoseLimitReached] = useState<Record<string, boolean>>({});
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const loadAssignments = useCallback(async (currentUserId: string) => {
     const { data, error: fetchError } = await supabase
@@ -409,6 +413,47 @@ export default function DashboardPage() {
     }
   };
 
+  const handleUploadSyllabus = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!userId) return;
+
+    if (!uploadFile) {
+      setUploadError("Please choose a file to upload.");
+      return;
+    }
+
+    setUploadLoading(true);
+    setUploadError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("userId", userId);
+
+      const response = await fetch("/api/parse-syllabus", {
+        method: "POST",
+        body: formData,
+      });
+
+      const contentType = response.headers.get("content-type") ?? "";
+      const result: { error?: string } = contentType.includes("application/json")
+        ? await response.json()
+        : {};
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to parse syllabus.");
+      }
+
+      await loadAssignments(userId);
+      setIsUploadModalOpen(false);
+      setUploadFile(null);
+    } catch (uploadError) {
+      setUploadError(uploadError instanceof Error ? uploadError.message : "Unable to parse syllabus.");
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-white px-4 text-slate-600 dark:bg-slate-950 dark:text-slate-300">
@@ -448,6 +493,17 @@ export default function DashboardPage() {
                 {theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                setUploadError(null);
+                setUploadFile(null);
+                setIsUploadModalOpen(true);
+              }}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Upload Syllabus
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -720,6 +776,51 @@ export default function DashboardPage() {
                   className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
                 >
                   {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isUploadModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
+          <div className="w-full max-w-md rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
+            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Upload Syllabus</h2>
+
+            <form onSubmit={handleUploadSyllabus} className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="syllabus" className="text-sm text-slate-700 dark:text-slate-300">
+                  Syllabus file
+                </label>
+                <input
+                  id="syllabus"
+                  type="file"
+                  onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                />
+              </div>
+
+              {uploadError ? (
+                <p className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
+                  {uploadError}
+                </p>
+              ) : null}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploadLoading}
+                  className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                >
+                  {uploadLoading ? "Processing..." : "Upload"}
                 </button>
               </div>
             </form>
