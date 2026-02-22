@@ -7,8 +7,8 @@ export async function POST(req: NextRequest) {
 Assignment: "${title}"
 Panic score: ${panicScore}/100
 Hours left: ${hoursLeft}
-
-CRITICAL: Your response MUST be MAXIMUM 2 sentences. Not 3. Not 4. Exactly 1 or 2 sentences only. Short, punchy, dry humor. No quotes. If you write more than 2 sentences, you failed.`
+Short, punchy, humurous, be taunty, be quirky, be aggressive, spice it up, make it interesting, but dont do too much (use context clues)
+CRITICAL: Your response MUST be MAXIMUM 2 sentences. Not 3. Not 4. Exactly 1 or 2 sentences only. No quotes. If you write more than 2 sentences, you failed.`
 
   const response = await fetch(
     'https://api.groq.com/openai/v1/chat/completions',

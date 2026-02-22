@@ -3,18 +3,17 @@
 :root {
   --background: #0b1220;
   --foreground: #e5e7eb;
+  color-scheme: dark;
 }
 
-.light {
+html.light {
   --background: #f9fafb;
   --foreground: #1f2937;
+  color-scheme: light;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-space-mono);
-  --font-mono: var(--font-space-mono);
+  --color-space-mono: var(--font-space-mono);
 }
 
 body {
