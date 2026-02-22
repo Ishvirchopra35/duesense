@@ -89,6 +89,39 @@ export default function DashboardPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [clearAllLoading, setClearAllLoading] = useState(false);
 
+  const deadlineConflict = useMemo(() => {
+    const activeAssignments = assignments.filter((assignment) => !assignment.completed);
+
+    if (activeAssignments.length < 2) {
+      return { count: 0, titles: [] as string[] };
+    }
+
+    const sortedByDeadline = [...activeAssignments].sort(
+      (a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
+    );
+
+    const conflictingTitleSet = new Set<string>();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+    for (let i = 0; i < sortedByDeadline.length; i += 1) {
+      const currentDeadline = new Date(sortedByDeadline[i].deadline).getTime();
+
+      for (let j = i + 1; j < sortedByDeadline.length; j += 1) {
+        const comparisonDeadline = new Date(sortedByDeadline[j].deadline).getTime();
+
+        if (comparisonDeadline - currentDeadline > ONE_DAY_MS) {
+          break;
+        }
+
+        conflictingTitleSet.add(sortedByDeadline[i].title);
+        conflictingTitleSet.add(sortedByDeadline[j].title);
+      }
+    }
+
+    const titles = Array.from(conflictingTitleSet);
+    return { count: titles.length, titles };
+  }, [assignments]);
+
   const loadAssignments = useCallback(async (currentUserId: string) => {
     const { data, error: fetchError } = await supabase
       .from("assignments")
@@ -579,6 +612,17 @@ export default function DashboardPage() {
             </button>
           </div>
         </header>
+
+        {deadlineConflict.count > 0 ? (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+            <p className="text-sm font-semibold">
+              Heads up — you have {deadlineConflict.count} assignments due within 24 hours of each other
+            </p>
+            <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+              {deadlineConflict.titles.join(" • ")}
+            </p>
+          </div>
+        ) : null}
 
         {error ? (
           <p className="rounded-lg border border-rose-300 bg-rose-100 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
