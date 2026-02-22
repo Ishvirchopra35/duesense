@@ -21,8 +21,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${spaceMono.variable} antialiased`}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="duesense-theme">
+      <body className={`${spaceMono.variable} font-mono antialiased`}>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="duesense-theme">
           {children}
         </ThemeProvider>
       </body>
