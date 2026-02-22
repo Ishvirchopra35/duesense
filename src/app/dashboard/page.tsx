@@ -39,6 +39,23 @@ function formatCountdown(deadline: string, nowMs: number) {
   };
 }
 
+function getPacingText(deadline: string, estimatedHours: number, nowMs: number) {
+  const diffMs = new Date(deadline).getTime() - nowMs;
+
+  if (diffMs <= 0) {
+    return null;
+  }
+
+  const daysRemaining = diffMs / (1000 * 60 * 60 * 24);
+
+  if (daysRemaining < 1) {
+    return "Due very soon — push through it";
+  }
+
+  const hoursPerDay = estimatedHours / daysRemaining;
+  return `Spend ~${hoursPerDay.toFixed(1)} hrs/day to finish comfortably`;
+}
+
 const FREEMIUM_ENABLED = process.env.NEXT_PUBLIC_ENABLE_FREEMIUM === "true";
 
 export default function DashboardPage() {
@@ -579,6 +596,7 @@ export default function DashboardPage() {
             const panicScore = calcPanicScore(assignment.deadline, assignment.estimated_hours);
             const panicColor = getPanicColor(panicScore);
             const panicLabel = getPanicLabel(panicScore);
+              const pacingText = getPacingText(assignment.deadline, assignment.estimated_hours, nowMs);
 
             return (
               <article
@@ -601,6 +619,10 @@ export default function DashboardPage() {
                 >
                   {panicLabel} · {panicScore}
                 </div>
+
+                {pacingText ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{pacingText}</p>
+                ) : null}
 
                 <div className="flex flex-wrap items-center gap-2">
                   {diagnoseLimitReached[assignment.id] ? (
