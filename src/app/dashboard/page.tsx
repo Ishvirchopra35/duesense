@@ -4,7 +4,7 @@ import { calcPanicScore, getPanicColor, getPanicLabel } from "@/lib/panic";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Moon, Sun } from "lucide-react";
+import { LogOut, Moon, Sun, Upload } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Assignment = {
@@ -69,6 +69,7 @@ export default function DashboardPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [vibes, setVibes] = useState<Record<string, string>>({});
   const [vibeLoading, setVibeLoading] = useState<Record<string, boolean>>({});
+  const [draftLoading, setDraftLoading] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("free");
@@ -77,6 +78,7 @@ export default function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAssignmentLimitModalOpen, setIsAssignmentLimitModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState("");
@@ -88,6 +90,9 @@ export default function DashboardPage() {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [clearAllLoading, setClearAllLoading] = useState(false);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const deadlineConflict = useMemo(() => {
     const activeAssignments = assignments.filter((assignment) => !assignment.completed);
@@ -505,6 +510,50 @@ export default function DashboardPage() {
     }
   };
 
+  const handleGetExtensionDraft = async (assignment: Assignment) => {
+    setDraftLoading((prev) => ({ ...prev, [assignment.id]: true }));
+    setError(null);
+
+    try {
+      const response = await fetch("/api/draft-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: assignment.title,
+          course: assignment.course,
+          deadline: assignment.deadline,
+        }),
+      });
+
+      const contentType = response.headers.get("content-type") ?? "";
+      const result: { subject?: string; body?: string; error?: string } = contentType.includes("application/json")
+        ? await response.json()
+        : {};
+
+      if (!response.ok || !result.subject || !result.body) {
+        throw new Error(result.error || "Could not generate extension draft right now.");
+      }
+
+      setDraftSubject(result.subject);
+      setDraftBody(result.body);
+      setCopySuccess(false);
+      setIsDraftModalOpen(true);
+    } catch (draftError) {
+      setError(draftError instanceof Error ? draftError.message : "Could not generate extension draft right now.");
+    } finally {
+      setDraftLoading((prev) => ({ ...prev, [assignment.id]: false }));
+    }
+  };
+
+  const handleCopyDraft = async () => {
+    try {
+      await navigator.clipboard.writeText(`Subject: ${draftSubject}\n\n${draftBody}`);
+      setCopySuccess(true);
+    } catch {
+      setError("Could not copy draft to clipboard.");
+    }
+  };
+
   const handleClearAllAssignments = async () => {
     if (!userId) return;
 
@@ -539,77 +588,92 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-white px-4 py-8 text-slate-900 md:px-8 dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto max-w-6xl space-y-6">
-        <header className="flex flex-col gap-4 rounded-2xl border border-slate-300 bg-white/50 p-6 shadow-2xl shadow-black/30 md:flex-row md:items-center md:justify-between dark:border-slate-800 dark:bg-slate-900/80">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">DueSense Dashboard</h1>
-              {FREEMIUM_ENABLED && (
-                <span
-                  className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${
-                    subscriptionStatus === "premium"
-                      ? "border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-300"
-                      : "border-slate-400 bg-slate-200 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                  }`}
-                >
-                  {subscriptionStatus === "premium" ? "PREMIUM" : "FREE"}
-                </span>
-              )}
+        <header className="relative overflow-hidden rounded-3xl border border-slate-300/90 bg-gradient-to-br from-white/90 via-slate-50/80 to-indigo-50/70 p-7 shadow-2xl shadow-indigo-900/10 ring-1 ring-indigo-300/30 md:p-9 dark:border-slate-800 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-indigo-950/40 dark:shadow-black/30 dark:ring-indigo-500/20">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.12),transparent_45%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.2),transparent_45%)]" />
+
+          <div className="relative flex flex-col gap-7 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <h1 className="text-4xl font-bold tracking-tight text-slate-900 md:text-5xl dark:text-white">DueSense Dashboard</h1>
+                {FREEMIUM_ENABLED && (
+                  <span
+                    className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${
+                      subscriptionStatus === "premium"
+                        ? "border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-300"
+                        : "border-slate-400 bg-slate-200 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    }`}
+                  >
+                    {subscriptionStatus === "premium" ? "PREMIUM" : "FREE"}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-slate-600 md:text-base dark:text-slate-400">Plan your work with clarity and stay ahead of every deadline.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-500">Live deadline tracking with panic intelligence.</p>
             </div>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Live deadline tracking with panic intelligence.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {mounted && (
+
+            <div className="flex w-full flex-col items-stretch gap-3 md:w-auto md:items-end">
               <button
                 type="button"
-                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                onClick={() => {
+                  setEditingId(null);
+                  setTitle("");
+                  setCourse("");
+                  setDeadline("");
+                  setEstimatedHours("1");
+                  setIsModalOpen(true);
+                }}
+                className="w-full rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400 md:w-auto"
               >
-                {theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
+                + Add Assignment
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setUploadError(null);
-                setUploadFile(null);
-                setIsUploadModalOpen(true);
-              }}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Upload Syllabus
-            </button>
-            <button
-              type="button"
-              onClick={handleClearAllAssignments}
-              disabled={clearAllLoading || assignments.length === 0}
-              className="rounded-lg border border-rose-400 px-4 py-2 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
-            >
-              {clearAllLoading ? "Clearing..." : "Clear All"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingId(null);
-                setTitle("");
-                setCourse("");
-                setDeadline("");
-                setEstimatedHours("1");
-                setIsModalOpen(true);
-              }}
-              className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
-            >
-              + Add Assignment
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await supabase.auth.signOut();
-                router.push("/");
-              }}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Logout
-            </button>
+
+              <div className="flex items-center justify-end gap-2">
+                {mounted && (
+                  <button
+                    type="button"
+                    onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+                    className="rounded-lg border border-slate-300 p-2.5 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                    aria-label="Toggle theme"
+                    title="Toggle theme"
+                  >
+                    {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadError(null);
+                    setUploadFile(null);
+                    setIsUploadModalOpen(true);
+                  }}
+                  className="rounded-lg border border-slate-300 p-2.5 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  aria-label="Upload syllabus"
+                  title="Upload syllabus"
+                >
+                  <Upload size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    router.push("/");
+                  }}
+                  className="rounded-lg border border-slate-300 p-2.5 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  aria-label="Logout"
+                  title="Logout"
+                >
+                  <LogOut size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAllAssignments}
+                  disabled={clearAllLoading || assignments.length === 0}
+                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  {clearAllLoading ? "Clearing..." : "Clear All"}
+                </button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -694,6 +758,14 @@ export default function DashboardPage() {
                     className="rounded-lg border border-blue-500 px-3 py-2 text-sm text-blue-600 transition hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/40"
                   >
                     Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleGetExtensionDraft(assignment)}
+                    disabled={draftLoading[assignment.id]}
+                    className="rounded-lg border border-amber-500 px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                  >
+                    {draftLoading[assignment.id] ? "Drafting..." : "Get Extension"}
                   </button>
                   <button
                     type="button"
@@ -948,6 +1020,41 @@ export default function DashboardPage() {
                 className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
               >
                 {upgradeLoading ? "Redirecting..." : "Upgrade"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isDraftModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
+            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Extension Email Draft</h2>
+
+            <div className="space-y-3 rounded-lg border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200">
+              <p>
+                <span className="font-semibold">Subject:</span> {draftSubject}
+              </p>
+              <p className="whitespace-pre-wrap">{draftBody}</p>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              {copySuccess ? (
+                <p className="mr-auto text-xs text-emerald-600 dark:text-emerald-300">Copied to clipboard</p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setIsDraftModalOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCopyDraft()}
+                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+              >
+                Copy
               </button>
             </div>
           </div>
