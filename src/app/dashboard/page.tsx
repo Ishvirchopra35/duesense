@@ -11,6 +11,7 @@ type Assignment = {
   course: string;
   deadline: string;
   estimated_hours: number;
+  completed?: boolean;
 };
 
 type SubscriptionStatus = "free" | "premium";
@@ -54,6 +55,7 @@ export default function DashboardPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAssignmentLimitModalOpen, setIsAssignmentLimitModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState("");
   const [deadline, setDeadline] = useState("");
@@ -64,7 +66,7 @@ export default function DashboardPage() {
   const loadAssignments = useCallback(async (currentUserId: string) => {
     const { data, error: fetchError } = await supabase
       .from("assignments")
-      .select("id, title, course, deadline, estimated_hours")
+      .select("id, title, course, deadline, estimated_hours, completed")
       .eq("user_id", currentUserId)
       .order("deadline", { ascending: true });
 
@@ -186,7 +188,8 @@ export default function DashboardPage() {
     event.preventDefault();
     if (!userId) return;
 
-    if (FREEMIUM_ENABLED && subscriptionStatus === "free" && assignments.length >= 5) {
+    const incompleteCount = assignments.filter((a) => !a.completed).length;
+    if (FREEMIUM_ENABLED && subscriptionStatus === "free" && !editingId && incompleteCount >= 5) {
       setIsModalOpen(false);
       setIsAssignmentLimitModalOpen(true);
       return;
@@ -195,29 +198,67 @@ export default function DashboardPage() {
     setSaving(true);
     setError(null);
 
-    const { data, error: insertError } = await supabase
-      .from("assignments")
-      .insert({
-        user_id: userId,
-        title,
-        course,
-        deadline: new Date(deadline).toISOString(),
-        estimated_hours: Number(estimatedHours),
-      })
-      .select("id, title, course, deadline, estimated_hours")
-      .single();
+    if (editingId) {
+      const { error: updateError } = await supabase
+        .from("assignments")
+        .update({
+          title,
+          course,
+          deadline: new Date(deadline).toISOString(),
+          estimated_hours: Number(estimatedHours),
+        })
+        .eq("id", editingId)
+        .eq("user_id", userId);
 
-    if (insertError) {
-      setError(insertError.message);
-      setSaving(false);
-      return;
+      if (updateError) {
+        setError(updateError.message);
+        setSaving(false);
+        return;
+      }
+
+      setAssignments((prev) =>
+        prev
+          .map((a) =>
+            a.id === editingId
+              ? {
+                  ...a,
+                  title,
+                  course,
+                  deadline: new Date(deadline).toISOString(),
+                  estimated_hours: Number(estimatedHours),
+                }
+              : a
+          )
+          .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+      );
+    } else {
+      const { data, error: insertError } = await supabase
+        .from("assignments")
+        .insert({
+          user_id: userId,
+          title,
+          course,
+          deadline: new Date(deadline).toISOString(),
+          estimated_hours: Number(estimatedHours),
+          completed: false,
+        })
+        .select("id, title, course, deadline, estimated_hours, completed")
+        .single();
+
+      if (insertError) {
+        setError(insertError.message);
+        setSaving(false);
+        return;
+      }
+
+      setAssignments((prev) => [...prev, data as Assignment].sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime()));
     }
 
-    setAssignments((prev) => [...prev, data as Assignment].sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime()));
     setTitle("");
     setCourse("");
     setDeadline("");
     setEstimatedHours("1");
+    setEditingId(null);
     setIsModalOpen(false);
     setSaving(false);
   };
@@ -242,6 +283,53 @@ export default function DashboardPage() {
       delete updated[assignmentId];
       return updated;
     });
+  };
+
+  const handleCompleteAssignment = async (assignmentId: string) => {
+    if (!userId) return;
+
+    const { error: updateError } = await supabase
+      .from("assignments")
+      .update({ completed: true })
+      .eq("id", assignmentId)
+      .eq("user_id", userId);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setAssignments((prev) =>
+      prev.map((a) => (a.id === assignmentId ? { ...a, completed: true } : a))
+    );
+  };
+
+  const handleUndoAssignment = async (assignmentId: string) => {
+    if (!userId) return;
+
+    const { error: updateError } = await supabase
+      .from("assignments")
+      .update({ completed: false })
+      .eq("id", assignmentId)
+      .eq("user_id", userId);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setAssignments((prev) =>
+      prev.map((a) => (a.id === assignmentId ? { ...a, completed: false } : a))
+    );
+  };
+
+  const handleEditAssignment = (assignment: Assignment) => {
+    setEditingId(assignment.id);
+    setTitle(assignment.title);
+    setCourse(assignment.course);
+    setDeadline(assignment.deadline.slice(0, 16));
+    setEstimatedHours(assignment.estimated_hours.toString());
+    setIsModalOpen(true);
   };
 
   const handleVibe = async (assignment: Assignment) => {
@@ -345,7 +433,14 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                setEditingId(null);
+                setTitle("");
+                setCourse("");
+                setDeadline("");
+                setEstimatedHours("1");
+                setIsModalOpen(true);
+              }}
               className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400"
             >
               + Add Assignment
@@ -369,8 +464,12 @@ export default function DashboardPage() {
           </p>
         ) : null}
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {assignments.map((assignment) => {
+        <section className="space-y-8">
+          {assignments.filter((a) => !a.completed).length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {assignments
+                .filter((a) => !a.completed)
+                .map((assignment) => {
             const { label } = formatCountdown(assignment.deadline, nowMs);
             const panicScore = calcPanicScore(assignment.deadline, assignment.estimated_hours);
             const panicColor = getPanicColor(panicScore);
@@ -398,7 +497,7 @@ export default function DashboardPage() {
                   {panicLabel} · {panicScore}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {diagnoseLimitReached[assignment.id] ? (
                     <button
                       type="button"
@@ -418,6 +517,20 @@ export default function DashboardPage() {
                       {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => handleEditAssignment(assignment)}
+                    className="rounded-lg border border-blue-700 px-3 py-2 text-sm text-blue-300 transition hover:bg-blue-950/40"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCompleteAssignment(assignment.id)}
+                    className="rounded-lg border border-emerald-700 px-3 py-2 text-sm text-emerald-300 transition hover:bg-emerald-950/40"
+                  >
+                    Done
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleDelete(assignment.id)}
@@ -440,7 +553,55 @@ export default function DashboardPage() {
                 ) : null}
               </article>
             );
-          })}
+            })
+          }
+            </div>
+          )}
+
+          {assignments.filter((a) => a.completed).length > 0 && (
+            <div>
+              <h3 className="mb-4 text-lg font-semibold text-slate-400">Completed</h3>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {assignments
+                  .filter((a) => a.completed)
+                  .map((assignment) => {
+                    return (
+                      <article
+                        key={assignment.id}
+                        className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/30 p-5 shadow-xl shadow-black/20 opacity-60"
+                      >
+                        <div className="space-y-1">
+                          <h2 className="text-xl font-bold text-white line-through">{assignment.title}</h2>
+                          <p className="text-sm text-slate-400 line-through">{assignment.course}</p>
+                        </div>
+
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Deadline</p>
+                          <p className="mt-1 text-sm text-slate-300 line-through">{new Date(assignment.deadline).toLocaleString()}</p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleUndoAssignment(assignment.id)}
+                            className="rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-300 transition hover:bg-amber-950/40"
+                          >
+                            Undo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(assignment.id)}
+                            className="rounded-lg border border-rose-700 px-3 py-2 text-sm text-rose-300 transition hover:bg-rose-950/40"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
         </section>
 
         {assignments.length === 0 ? (
@@ -453,7 +614,7 @@ export default function DashboardPage() {
       {isModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
           <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-black/40">
-            <h2 className="mb-4 text-xl font-bold text-white">New Assignment</h2>
+            <h2 className="mb-4 text-xl font-bold text-white">{editingId ? "Edit Assignment" : "New Assignment"}</h2>
 
             <form onSubmit={handleAddAssignment} className="space-y-4">
               <div className="space-y-2">
