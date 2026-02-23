@@ -24,6 +24,32 @@ type TurnstileWindow = Window & {
   turnstile?: Turnstile;
 };
 
+type CaptchaVerifyResponse = {
+  success?: boolean;
+  error?: string;
+  codes?: string[];
+};
+
+const getCaptchaErrorMessage = (codes: string[] = []) => {
+  if (codes.includes("timeout-or-duplicate")) {
+    return "Captcha expired or was already used. Please complete it again and submit right away.";
+  }
+
+  if (codes.includes("invalid-input-response")) {
+    return "Captcha response was invalid. Please retry the captcha.";
+  }
+
+  if (codes.includes("invalid-input-secret") || codes.includes("missing-input-secret")) {
+    return "Captcha is misconfigured on the server. Update TURNSTILE_SECRET_KEY and try again.";
+  }
+
+  if (codes.includes("invalid-input-sitekey") || codes.includes("missing-input-response")) {
+    return "Captcha configuration is invalid. Please retry in a moment.";
+  }
+
+  return "Captcha verification failed. Please try again.";
+};
+
 export default function AuthPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -135,8 +161,10 @@ export default function AuthPage() {
       body: JSON.stringify({ token: captchaToken }),
     });
 
+    const captchaPayload = (await captchaResponse.json().catch(() => null)) as CaptchaVerifyResponse | null;
+
     if (!captchaResponse.ok) {
-      setError("Captcha verification failed. Please try again.");
+      setError(getCaptchaErrorMessage(captchaPayload?.codes));
       setLoading(false);
       resetCaptcha();
       return;

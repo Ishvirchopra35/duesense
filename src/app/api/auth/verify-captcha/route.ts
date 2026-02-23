@@ -3,19 +3,33 @@ import { NextRequest, NextResponse } from "next/server";
 type TurnstileResponse = {
   success: boolean;
   "error-codes"?: string[];
+  action?: string;
+  cdata?: string;
+  hostname?: string;
+  challenge_ts?: string;
+};
+
+type VerifyCaptchaRequest = {
+  token?: string;
+};
+
+type VerifyCaptchaFailure = {
+  error: string;
+  "error-codes"?: string[];
 };
 
 export async function POST(request: NextRequest) {
   try {
-    const secret = process.env.TURNSTILE_SECRET_KEY;
+    const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
 
     if (!secret) {
       return NextResponse.json({ error: "Captcha is not configured." }, { status: 500 });
     }
 
-    const { token } = (await request.json()) as { token?: string };
+    const { token } = (await request.json()) as VerifyCaptchaRequest;
+    const normalizedToken = token?.trim();
 
-    if (!token) {
+    if (!normalizedToken) {
       return NextResponse.json({ error: "Captcha token is missing." }, { status: 400 });
     }
 
@@ -24,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     const formData = new URLSearchParams();
     formData.append("secret", secret);
-    formData.append("response", token);
+    formData.append("response", normalizedToken);
 
     if (remoteIp) {
       formData.append("remoteip", remoteIp);
@@ -34,20 +48,19 @@ export async function POST(request: NextRequest) {
       "https://challenges.cloudflare.com/turnstile/v0/siteverify",
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: formData.toString(),
+        body: formData,
+        cache: "no-store",
       }
     );
 
-    const verificationData = (await verificationResponse.json()) as TurnstileResponse;
+    const verificationData = (await verificationResponse.json()) as TurnstileResponse | VerifyCaptchaFailure;
+    const errorCodes = verificationData["error-codes"] ?? [];
 
     if (!verificationResponse.ok || !verificationData.success) {
       return NextResponse.json(
         {
           error: "Captcha verification failed.",
-          codes: verificationData["error-codes"] ?? [],
+          codes: errorCodes,
         },
         { status: 400 }
       );
