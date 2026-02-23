@@ -50,6 +50,20 @@ const getCaptchaErrorMessage = (codes: string[] = []) => {
   return "Captcha verification failed. Please try again.";
 };
 
+const buildCaptchaFailureMessage = (payload: CaptchaVerifyResponse | null) => {
+  const messageFromCode = getCaptchaErrorMessage(payload?.codes);
+
+  if (!payload) {
+    return messageFromCode;
+  }
+
+  if (payload.codes?.length) {
+    return `${messageFromCode} (${payload.codes.join(", ")})`;
+  }
+
+  return payload.error ?? messageFromCode;
+};
+
 export default function AuthPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -61,6 +75,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
+  const captchaTokenRef = useRef("");
   const captchaContainerRef = useRef<HTMLDivElement | null>(null);
   const captchaWidgetIdRef = useRef<string | null>(null);
 
@@ -81,15 +96,18 @@ export default function AuthPage() {
   }, [router, supabase]);
 
   const handleCaptchaSuccess = useCallback((token: string) => {
+    captchaTokenRef.current = token;
     setCaptchaToken(token);
     setError(null);
   }, []);
 
   const handleCaptchaExpired = useCallback(() => {
+    captchaTokenRef.current = "";
     setCaptchaToken("");
   }, []);
 
   const handleCaptchaError = useCallback(() => {
+    captchaTokenRef.current = "";
     setCaptchaToken("");
     setError("Captcha failed to load. Please try again.");
   }, []);
@@ -120,6 +138,7 @@ export default function AuthPage() {
   }, [handleCaptchaError, handleCaptchaExpired, handleCaptchaSuccess, turnstileSiteKey]);
 
   const resetCaptcha = useCallback(() => {
+    captchaTokenRef.current = "";
     setCaptchaToken("");
     const turnstile = (window as TurnstileWindow).turnstile;
 
@@ -145,8 +164,9 @@ export default function AuthPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    const tokenToVerify = captchaTokenRef.current;
 
-    if (!captchaToken) {
+    if (!tokenToVerify) {
       setError("Please complete the captcha.");
       return;
     }
@@ -158,13 +178,13 @@ export default function AuthPage() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ token: captchaToken }),
+      body: JSON.stringify({ token: tokenToVerify }),
     });
 
     const captchaPayload = (await captchaResponse.json().catch(() => null)) as CaptchaVerifyResponse | null;
 
     if (!captchaResponse.ok) {
-      setError(getCaptchaErrorMessage(captchaPayload?.codes));
+      setError(buildCaptchaFailureMessage(captchaPayload));
       setLoading(false);
       resetCaptcha();
       return;
@@ -304,7 +324,7 @@ export default function AuthPage() {
 
           <button
             type="submit"
-            disabled={loading || !turnstileSiteKey}
+            disabled={loading || !turnstileSiteKey || !captchaToken}
             className="w-full rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading
