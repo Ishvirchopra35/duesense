@@ -18,6 +18,9 @@ type VerifyCaptchaFailure = {
   "error-codes"?: string[];
 };
 
+const isTurnstileSuccess = (data: TurnstileResponse | VerifyCaptchaFailure) =>
+  "success" in data && data.success === true;
+
 export async function POST(request: NextRequest) {
   try {
     const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
@@ -56,7 +59,7 @@ export async function POST(request: NextRequest) {
     const verificationData = (await verificationResponse.json()) as TurnstileResponse | VerifyCaptchaFailure;
     const errorCodes = verificationData["error-codes"] ?? [];
 
-    if (!verificationResponse.ok || !verificationData.success) {
+    if (!verificationResponse.ok || !isTurnstileSuccess(verificationData)) {
       return NextResponse.json(
         {
           error: "Captcha verification failed.",
