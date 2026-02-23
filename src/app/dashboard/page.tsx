@@ -127,6 +127,7 @@ export default function DashboardPage() {
   const [roastLoading, setRoastLoading] = useState(false);
   const [isRoastOpen, setIsRoastOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
+  const [dismissConflictBanner, setDismissConflictBanner] = useState(false);
 
   const deadlineConflict = useMemo(() => {
     const activeAssignments = assignments.filter((assignment) => !assignment.completed);
@@ -362,6 +363,12 @@ export default function DashboardPage() {
   useEffect(() => {
     window.localStorage.setItem("duesense:view", viewMode);
   }, [viewMode]);
+
+  useEffect(() => {
+    if (deadlineConflict.count === 0) {
+      setDismissConflictBanner(false);
+    }
+  }, [deadlineConflict.count]);
 
   useEffect(() => {
     let mounted = true;
@@ -1001,8 +1008,16 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        {deadlineConflict.count > 0 ? (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+        {deadlineConflict.count > 0 && !dismissConflictBanner ? (
+          <div className="relative rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+            <button
+              type="button"
+              onClick={() => setDismissConflictBanner(true)}
+              className="absolute right-3 top-3 rounded px-2 py-0.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/40"
+              aria-label="Dismiss conflict warning"
+            >
+              ×
+            </button>
             <p className="text-sm font-semibold">
               Heads up — you have {deadlineConflict.count} assignments due within 24 hours of each other
             </p>
