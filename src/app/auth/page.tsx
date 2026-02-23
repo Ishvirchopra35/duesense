@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Script from "next/script";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 export default function AuthPage() {
@@ -15,6 +16,9 @@ export default function AuthPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState("");
+
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
     const checkSession = async () => {
@@ -30,10 +34,55 @@ export default function AuthPage() {
     void checkSession();
   }, [router, supabase]);
 
+  useEffect(() => {
+    (window as Window & { onTurnstileSuccess?: (token: string) => void }).onTurnstileSuccess = (
+      token: string
+    ) => {
+      setCaptchaToken(token);
+      setError(null);
+    };
+
+    (window as Window & { onTurnstileExpired?: () => void }).onTurnstileExpired = () => {
+      setCaptchaToken("");
+    };
+
+    (window as Window & { onTurnstileError?: () => void }).onTurnstileError = () => {
+      setCaptchaToken("");
+      setError("Captcha failed to load. Please refresh and try again.");
+    };
+
+    return () => {
+      delete (window as Window & { onTurnstileSuccess?: (token: string) => void }).onTurnstileSuccess;
+      delete (window as Window & { onTurnstileExpired?: () => void }).onTurnstileExpired;
+      delete (window as Window & { onTurnstileError?: () => void }).onTurnstileError;
+    };
+  }, []);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+
+    if (!captchaToken) {
+      setError("Please complete the captcha.");
+      return;
+    }
+
     setLoading(true);
+
+    const captchaResponse = await fetch("/api/auth/verify-captcha", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ token: captchaToken }),
+    });
+
+    if (!captchaResponse.ok) {
+      setError("Captcha verification failed. Please try again.");
+      setLoading(false);
+      setCaptchaToken("");
+      return;
+    }
 
     if (mode === "login") {
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -44,6 +93,7 @@ export default function AuthPage() {
       if (signInError) {
         setError(signInError.message);
         setLoading(false);
+        setCaptchaToken("");
         return;
       }
     } else {
@@ -55,6 +105,7 @@ export default function AuthPage() {
       if (signUpError) {
         setError(signUpError.message);
         setLoading(false);
+        setCaptchaToken("");
         return;
       }
     }
@@ -65,6 +116,9 @@ export default function AuthPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
+      {turnstileSiteKey ? (
+        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
+      ) : null}
       <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30 backdrop-blur">
         <div className="mb-4">
           <Link
@@ -143,6 +197,20 @@ export default function AuthPage() {
             </div>
           </div>
 
+          {turnstileSiteKey ? (
+            <div
+              className="cf-turnstile"
+              data-sitekey={turnstileSiteKey}
+              data-callback="onTurnstileSuccess"
+              data-expired-callback="onTurnstileExpired"
+              data-error-callback="onTurnstileError"
+            />
+          ) : (
+            <p className="rounded-lg border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
+              Missing NEXT_PUBLIC_TURNSTILE_SITE_KEY in environment.
+            </p>
+          )}
+
           {error ? (
             <p className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-300">
               {error}
@@ -151,7 +219,7 @@ export default function AuthPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !turnstileSiteKey}
             className="w-full rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading
