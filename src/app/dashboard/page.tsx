@@ -844,7 +844,7 @@ export default function DashboardPage() {
           <div className="relative flex flex-col gap-7 md:flex-row md:items-start md:justify-between">
             <div className="space-y-2">
               <div className="flex items-center gap-3">
-                <h1 className="text-4xl font-bold tracking-tight text-slate-900 md:text-5xl dark:text-white">DueSense Dashboard</h1>
+                <h1 className="text-4xl font-bold tracking-tight text-slate-900 md:text-5xl dark:text-white">Wrap It Up Dashboard</h1>
                 {FREEMIUM_ENABLED && (
                   <span
                     className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${

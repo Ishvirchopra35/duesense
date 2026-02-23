@@ -1,4 +1,4 @@
-# DueSense
+# Wrap It Up
 
 A Next.js student deadline tracker with panic intelligence and AI-powered motivational vibes.
 

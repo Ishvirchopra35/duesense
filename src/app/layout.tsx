@@ -10,7 +10,7 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DueSense",
+  title: "Wrap It Up",
   description: "Student deadline tracker",
 };
 
