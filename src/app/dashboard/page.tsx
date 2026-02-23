@@ -4,7 +4,7 @@ import { calcPanicScore, getPanicColor, getPanicLabel } from "@/lib/panic";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { LogOut, Moon, Sun, Upload } from "lucide-react";
+import { Flame, LogOut, Moon, Sun, Upload } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Assignment = {
@@ -55,6 +55,10 @@ function getPacingText(deadline: string, estimatedHours: number, nowMs: number) 
 
   const hoursPerDay = estimatedHours / daysRemaining;
   return `Spend ~${hoursPerDay.toFixed(1)} hrs/day to finish comfortably`;
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function getPriorityBadgeClass(priority: string) {
@@ -111,6 +115,10 @@ export default function DashboardPage() {
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
   const [studyPlanError, setStudyPlanError] = useState<string | null>(null);
   const [surviveToday, setSurviveToday] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [roast, setRoast] = useState<string | null>(null);
+  const [roastLoading, setRoastLoading] = useState(false);
+  const [isRoastOpen, setIsRoastOpen] = useState(false);
 
   const deadlineConflict = useMemo(() => {
     const activeAssignments = assignments.filter((assignment) => !assignment.completed);
@@ -173,6 +181,23 @@ export default function DashboardPage() {
     [activeAssignments]
   );
 
+  const roastAssignments = useMemo(
+    () =>
+      activeAssignments.map((assignment) => ({
+        title: assignment.title,
+        course: assignment.course,
+        deadline: assignment.deadline,
+        estimated_hours: assignment.estimated_hours,
+        priority: assignment.priority ?? "Medium",
+        panic_score: calcPanicScore(
+          assignment.deadline,
+          assignment.estimated_hours,
+          assignment.priority ?? "Medium"
+        ),
+      })),
+    [activeAssignments]
+  );
+
   const studyPlanLines = useMemo(
     () => (studyPlan ? studyPlan.split("\n").map((line) => line.trim()).filter(Boolean) : []),
     [studyPlan]
@@ -202,7 +227,7 @@ export default function DashboardPage() {
 
     const { data, error: subscriptionError } = await supabase
       .from("subscriptions")
-      .select("status")
+      .select("status, streak, last_active")
       .eq("user_id", currentUserId)
       .maybeSingle();
 
@@ -214,7 +239,7 @@ export default function DashboardPage() {
     if (!data) {
       const { error: insertError } = await supabase
         .from("subscriptions")
-        .insert({ user_id: currentUserId, status: "free" });
+        .insert({ user_id: currentUserId, status: "free", streak: 0, last_active: null });
 
       if (insertError) {
         setError(insertError.message);
@@ -222,10 +247,67 @@ export default function DashboardPage() {
       }
 
       setSubscriptionStatus("free");
+      setStreak(0);
       return;
     }
 
     setSubscriptionStatus(data.status === "premium" ? "premium" : "free");
+    setStreak(data.streak ?? 0);
+  }, [supabase]);
+
+  const updateStreak = useCallback(async (currentUserId: string) => {
+    const { data, error: fetchError } = await supabase
+      .from("subscriptions")
+      .select("status, streak, last_active")
+      .eq("user_id", currentUserId)
+      .maybeSingle();
+
+    if (fetchError) {
+      setError(fetchError.message);
+      return;
+    }
+
+    const today = startOfDay(new Date());
+
+    if (!data) {
+      const { error: insertError } = await supabase.from("subscriptions").insert({
+        user_id: currentUserId,
+        status: "free",
+        streak: 1,
+        last_active: today.toISOString(),
+      });
+
+      if (insertError) {
+        setError(insertError.message);
+        return;
+      }
+
+      setStreak(1);
+      return;
+    }
+
+    const lastActive = data.last_active ? startOfDay(new Date(data.last_active)) : null;
+    const diffDays = lastActive
+      ? Math.floor((today.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    if (diffDays === 0) {
+      setStreak(data.streak ?? 0);
+      return;
+    }
+
+    const nextStreak = diffDays === 1 ? (data.streak ?? 0) + 1 : 1;
+    const { error: updateError } = await supabase
+      .from("subscriptions")
+      .update({ streak: nextStreak, last_active: today.toISOString() })
+      .eq("user_id", currentUserId);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setStreak(nextStreak);
   }, [supabase]);
 
   const startUpgradeCheckout = useCallback(async () => {
@@ -281,6 +363,7 @@ export default function DashboardPage() {
 
       setUserId(user.id);
       await loadSubscriptionStatus(user.id);
+      await updateStreak(user.id);
       await loadAssignments(user.id);
       if (mounted) {
         setIsLoading(false);
@@ -301,7 +384,7 @@ export default function DashboardPage() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadAssignments, loadSubscriptionStatus, router, supabase]);
+  }, [loadAssignments, loadSubscriptionStatus, router, supabase, updateStreak]);
 
 
   const handleAddAssignment = async (event: FormEvent<HTMLFormElement>) => {
@@ -426,6 +509,7 @@ export default function DashboardPage() {
     setAssignments((prev) =>
       prev.map((a) => (a.id === assignmentId ? { ...a, completed: true } : a))
     );
+    await updateStreak(userId);
   };
 
   const handleUndoAssignment = async (assignmentId: string) => {
@@ -608,6 +692,35 @@ export default function DashboardPage() {
     }
   };
 
+  const handleRoast = async () => {
+    setIsRoastOpen(true);
+    setRoast(null);
+    setRoastLoading(true);
+
+    try {
+      const response = await fetch("/api/roast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignments: roastAssignments }),
+      });
+
+      const contentType = response.headers.get("content-type") ?? "";
+      const result: { roast?: string; error?: string } = contentType.includes("application/json")
+        ? await response.json()
+        : {};
+
+      if (!response.ok || !result.roast) {
+        throw new Error(result.error || "Failed to generate roast.");
+      }
+
+      setRoast(result.roast.trim());
+    } catch (roastError) {
+      setRoast(roastError instanceof Error ? roastError.message : "Failed to generate roast.");
+    } finally {
+      setRoastLoading(false);
+    }
+  };
+
   const handleGetExtensionDraft = async (assignment: Assignment) => {
     setDraftLoading((prev) => ({ ...prev, [assignment.id]: true }));
     setError(null);
@@ -720,6 +833,14 @@ export default function DashboardPage() {
               <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
                 <button
                   type="button"
+                  onClick={() => void handleRoast()}
+                  disabled={roastLoading}
+                  className="w-full rounded-xl border border-rose-400/80 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-rose-500/50 dark:text-rose-200 dark:hover:bg-rose-500/10"
+                >
+                  {roastLoading ? "Roasting..." : "Roast Me"}
+                </button>
+                <button
+                  type="button"
                   onClick={() => void handleStudyPlan()}
                   disabled={studyPlanLoading || activeAssignments.length === 0}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -800,6 +921,14 @@ export default function DashboardPage() {
                   {clearAllLoading ? "Clearing..." : "Clear All"}
                 </button>
               </div>
+              {streak > 1 ? (
+                <div className="flex justify-end">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/70 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200">
+                    <Flame size={14} />
+                    {streak}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>
@@ -1222,6 +1351,32 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setIsStudyPlanOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isRoastOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
+            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Roast Me</h2>
+
+            {roastLoading ? (
+              <p className="text-sm text-slate-600 dark:text-slate-300">Generating roast...</p>
+            ) : roast ? (
+              <p className="text-sm text-slate-700 dark:text-slate-200">{roast}</p>
+            ) : (
+              <p className="text-sm text-slate-600 dark:text-slate-300">No roast available yet.</p>
+            )}
+
+            <div className="mt-5 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setIsRoastOpen(false)}
                 className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Close
