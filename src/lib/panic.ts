@@ -1,4 +1,8 @@
-export function calcPanicScore(deadline: string, estimatedHours: number): number {
+export function calcPanicScore(
+  deadline: string,
+  estimatedHours: number,
+  priority: string = "Medium"
+): number {
   const now = new Date()
   const due = new Date(deadline)
   const hoursLeft = (due.getTime() - now.getTime()) / (1000 * 60 * 60)
@@ -6,7 +10,10 @@ export function calcPanicScore(deadline: string, estimatedHours: number): number
   if (hoursLeft <= 0) return 100
 
   const pressure = estimatedHours / hoursLeft
-  return Math.min(Math.round(pressure * 100), 100)
+  const baseScore = Math.round(pressure * 100)
+  const multiplier = priority === "High" ? 1.5 : priority === "Low" ? 0.5 : 1.0
+  const adjusted = baseScore * multiplier
+  return Math.min(Math.round(adjusted), 100)
 }
 
 export function getPanicColor(score: number): string {

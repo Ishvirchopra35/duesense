@@ -13,6 +13,7 @@ type Assignment = {
   course: string;
   deadline: string;
   estimated_hours: number;
+  priority?: "Low" | "Medium" | "High";
   completed?: boolean;
 };
 
@@ -56,6 +57,17 @@ function getPacingText(deadline: string, estimatedHours: number, nowMs: number) 
   return `Spend ~${hoursPerDay.toFixed(1)} hrs/day to finish comfortably`;
 }
 
+function getPriorityBadgeClass(priority: string) {
+  switch (priority) {
+    case "High":
+      return "border-rose-400/80 bg-rose-100 text-rose-700 dark:border-rose-500/60 dark:bg-rose-500/10 dark:text-rose-200";
+    case "Low":
+      return "border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300";
+    default:
+      return "border-blue-400/80 bg-blue-100 text-blue-700 dark:border-blue-500/60 dark:bg-blue-500/10 dark:text-blue-200";
+  }
+}
+
 const FREEMIUM_ENABLED = process.env.NEXT_PUBLIC_ENABLE_FREEMIUM === "true";
 
 export default function DashboardPage() {
@@ -85,6 +97,7 @@ export default function DashboardPage() {
   const [course, setCourse] = useState("");
   const [deadline, setDeadline] = useState("");
   const [estimatedHours, setEstimatedHours] = useState("1");
+  const [priority, setPriority] = useState<"Low" | "Medium" | "High">("Medium");
   const [saving, setSaving] = useState(false);
   const [diagnoseLimitReached, setDiagnoseLimitReached] = useState<Record<string, boolean>>({});
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -94,10 +107,10 @@ export default function DashboardPage() {
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
-  const [weeklySummary, setWeeklySummary] = useState<string | null>(null);
   const [studyPlan, setStudyPlan] = useState<string | null>(null);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
   const [studyPlanError, setStudyPlanError] = useState<string | null>(null);
+  const [surviveToday, setSurviveToday] = useState(false);
 
   const deadlineConflict = useMemo(() => {
     const activeAssignments = assignments.filter((assignment) => !assignment.completed);
@@ -137,17 +150,17 @@ export default function DashboardPage() {
     [assignments]
   );
 
-  const weeklySummaryAssignments = useMemo(
-    () =>
-      activeAssignments.map((assignment) => ({
-        title: assignment.title,
-        course: assignment.course,
-        deadline: assignment.deadline,
-        estimated_hours: assignment.estimated_hours,
-        panic_score: calcPanicScore(assignment.deadline, assignment.estimated_hours),
-      })),
-    [activeAssignments]
-  );
+  const filteredAssignments = useMemo(() => {
+    if (!surviveToday) {
+      return activeAssignments;
+    }
+
+    const WINDOW_MS = 48 * 60 * 60 * 1000;
+    return activeAssignments.filter((assignment) => {
+      const diffMs = new Date(assignment.deadline).getTime() - nowMs;
+      return diffMs > 0 && diffMs <= WINDOW_MS;
+    });
+  }, [activeAssignments, nowMs, surviveToday]);
 
   const studyPlanAssignments = useMemo(
     () =>
@@ -168,7 +181,7 @@ export default function DashboardPage() {
   const loadAssignments = useCallback(async (currentUserId: string) => {
     const { data, error: fetchError } = await supabase
       .from("assignments")
-      .select("id, title, course, deadline, estimated_hours, completed")
+      .select("id, title, course, deadline, estimated_hours, priority, completed")
       .eq("user_id", currentUserId)
       .order("deadline", { ascending: true });
 
@@ -290,43 +303,6 @@ export default function DashboardPage() {
     };
   }, [loadAssignments, loadSubscriptionStatus, router, supabase]);
 
-  useEffect(() => {
-    let active = true;
-
-    const loadWeeklySummary = async () => {
-      if (weeklySummaryAssignments.length === 0) {
-        setWeeklySummary(null);
-        return;
-      }
-
-      try {
-        const response = await fetch("/api/weekly-summary", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ assignments: weeklySummaryAssignments }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch weekly summary");
-        }
-
-        const result: { summary?: string } = await response.json();
-        if (active) {
-          setWeeklySummary(result.summary?.trim() || null);
-        }
-      } catch {
-        if (active) {
-          setWeeklySummary(null);
-        }
-      }
-    };
-
-    void loadWeeklySummary();
-
-    return () => {
-      active = false;
-    };
-  }, [weeklySummaryAssignments]);
 
   const handleAddAssignment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -350,6 +326,7 @@ export default function DashboardPage() {
           course,
           deadline: new Date(deadline).toISOString(),
           estimated_hours: Number(estimatedHours),
+          priority,
         })
         .eq("id", editingId)
         .eq("user_id", userId);
@@ -370,6 +347,7 @@ export default function DashboardPage() {
                   course,
                   deadline: new Date(deadline).toISOString(),
                   estimated_hours: Number(estimatedHours),
+                    priority,
                 }
               : a
           )
@@ -384,9 +362,10 @@ export default function DashboardPage() {
           course,
           deadline: new Date(deadline).toISOString(),
           estimated_hours: Number(estimatedHours),
+          priority,
           completed: false,
         })
-        .select("id, title, course, deadline, estimated_hours, completed")
+        .select("id, title, course, deadline, estimated_hours, priority, completed")
         .single();
 
       if (insertError) {
@@ -402,6 +381,7 @@ export default function DashboardPage() {
     setCourse("");
     setDeadline("");
     setEstimatedHours("1");
+    setPriority("Medium");
     setEditingId(null);
     setIsModalOpen(false);
     setSaving(false);
@@ -473,6 +453,7 @@ export default function DashboardPage() {
     setCourse(assignment.course);
     setDeadline(assignment.deadline.slice(0, 16));
     setEstimatedHours(assignment.estimated_hours.toString());
+    setPriority(assignment.priority ?? "Medium");
     setIsModalOpen(true);
   };
 
@@ -516,7 +497,11 @@ export default function DashboardPage() {
     setDiagnoseLimitReached((prev) => ({ ...prev, [assignment.id]: false }));
 
     const { hoursLeft } = formatCountdown(assignment.deadline, nowMs);
-    const panicScore = calcPanicScore(assignment.deadline, assignment.estimated_hours);
+    const panicScore = calcPanicScore(
+      assignment.deadline,
+      assignment.estimated_hours,
+      assignment.priority ?? "Medium"
+    );
 
     setVibeLoading((prev) => ({ ...prev, [assignment.id]: true }));
     setError(null);
@@ -700,6 +685,13 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-white px-4 py-8 text-slate-900 md:px-8 dark:bg-slate-950 dark:text-slate-100">
+      {surviveToday ? (
+        <div className="fixed right-4 top-4 z-50">
+          <span className="rounded-full border border-amber-400/80 bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 shadow-sm shadow-amber-200/50 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200 dark:shadow-none">
+            Filtering: due in 48h
+          </span>
+        </div>
+      ) : null}
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="relative overflow-hidden rounded-3xl border border-slate-300/90 bg-gradient-to-br from-white/90 via-slate-50/80 to-indigo-50/70 p-7 shadow-2xl shadow-indigo-900/10 ring-1 ring-indigo-300/30 md:p-9 dark:border-slate-800 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-indigo-950/40 dark:shadow-black/30 dark:ring-indigo-500/20">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.12),transparent_45%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.2),transparent_45%)]" />
@@ -736,12 +728,24 @@ export default function DashboardPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setSurviveToday((prev) => !prev)}
+                  className={`w-full rounded-xl border px-4 py-3 text-sm font-semibold transition md:w-auto ${
+                    surviveToday
+                      ? "border-amber-500 bg-amber-100 text-amber-800 hover:bg-amber-200 dark:border-amber-500/60 dark:bg-amber-500/20 dark:text-amber-200 dark:hover:bg-amber-500/30"
+                      : "border-amber-400/80 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-200 dark:hover:bg-amber-500/10"
+                  }`}
+                >
+                  Survive Today
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setEditingId(null);
                     setTitle("");
                     setCourse("");
                     setDeadline("");
                     setEstimatedHours("1");
+                    setPriority("Medium");
                     setIsModalOpen(true);
                   }}
                   className="w-full rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400 md:w-auto"
@@ -817,24 +821,20 @@ export default function DashboardPage() {
           </p>
         ) : null}
 
-        {weeklySummary ? (
-          <div className="rounded-2xl border border-slate-300 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/70">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Situation Report</p>
-            <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{weeklySummary}</p>
-          </div>
-        ) : null}
-
         <section className="space-y-8">
-          {assignments.filter((a) => !a.completed).length > 0 && (
+          {filteredAssignments.length > 0 && (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {assignments
-                .filter((a) => !a.completed)
-                .map((assignment) => {
+              {filteredAssignments.map((assignment) => {
             const { label } = formatCountdown(assignment.deadline, nowMs);
-            const panicScore = calcPanicScore(assignment.deadline, assignment.estimated_hours);
+            const panicScore = calcPanicScore(
+              assignment.deadline,
+              assignment.estimated_hours,
+              assignment.priority ?? "Medium"
+            );
             const panicColor = getPanicColor(panicScore);
             const panicLabel = getPanicLabel(panicScore);
               const pacingText = getPacingText(assignment.deadline, assignment.estimated_hours, nowMs);
+              const priorityLabel = assignment.priority ?? "Medium";
 
             return (
               <article
@@ -842,7 +842,16 @@ export default function DashboardPage() {
                 className="space-y-4 rounded-2xl border border-slate-300 bg-white p-5 shadow-xl shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-black/20"
               >
                 <div className="space-y-1">
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">{assignment.title}</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">{assignment.title}</h2>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
+                        priorityLabel
+                      )}`}
+                    >
+                      {priorityLabel}
+                    </span>
+                  </div>
                   <p className="text-sm text-slate-600 dark:text-slate-400">{assignment.course}</p>
                 </div>
 
@@ -945,6 +954,12 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {surviveToday && filteredAssignments.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-6 text-center text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+              Nothing due in the next 48 hours. Go touch grass.
+            </div>
+          ) : null}
+
           {assignments.filter((a) => a.completed).length > 0 && (
             <div>
               <h3 className="mb-4 text-lg font-semibold text-slate-600 dark:text-slate-400">Completed</h3>
@@ -952,13 +967,23 @@ export default function DashboardPage() {
                 {assignments
                   .filter((a) => a.completed)
                   .map((assignment) => {
+                    const priorityLabel = assignment.priority ?? "Medium";
                     return (
                       <article
                         key={assignment.id}
                         className="space-y-4 rounded-2xl border border-slate-300 bg-slate-100 p-5 shadow-xl shadow-slate-200/30 opacity-60 dark:border-slate-800 dark:bg-slate-900/30 dark:shadow-black/20"
                       >
                         <div className="space-y-1">
-                          <h2 className="text-xl font-bold text-slate-900 line-through dark:text-white">{assignment.title}</h2>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-xl font-bold text-slate-900 line-through dark:text-white">{assignment.title}</h2>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
+                                priorityLabel
+                              )}`}
+                            >
+                              {priorityLabel}
+                            </span>
+                          </div>
                           <p className="text-sm text-slate-600 line-through dark:text-slate-400">{assignment.course}</p>
                         </div>
 
@@ -1060,6 +1085,22 @@ export default function DashboardPage() {
                   onChange={(event) => setEstimatedHours(event.target.value)}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="priority" className="text-sm text-slate-700 dark:text-slate-300">
+                  Priority
+                </label>
+                <select
+                  id="priority"
+                  value={priority}
+                  onChange={(event) => setPriority(event.target.value as "Low" | "Medium" | "High")}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                >
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">
