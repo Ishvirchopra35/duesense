@@ -996,9 +996,13 @@ export default function DashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleClearAllAssignments}
+                  onClick={() => {
+                    const shouldClear = window.confirm("Clear all assignments? This cannot be undone.");
+                    if (!shouldClear) return;
+                    void handleClearAllAssignments();
+                  }}
                   disabled={clearAllLoading || assignments.length === 0}
-                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  className="rounded-lg border border-rose-400/80 px-2.5 py-1.5 text-xs text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/60 dark:text-rose-300 dark:hover:bg-rose-500/10"
                 >
                   {clearAllLoading ? "Clearing..." : "Clear All"}
                 </button>
