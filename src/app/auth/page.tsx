@@ -1,6 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -65,6 +66,14 @@ export default function AuthPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
       <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30 backdrop-blur">
+        <div className="mb-4">
+          <Link
+            href="/"
+            className="inline-flex items-center rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
+          >
+            ← Back
+          </Link>
+        </div>
         <div className="mb-6 space-y-2 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-white">Wrap It Up</h1>
           <p className="text-sm text-slate-400">Track deadlines. Kill panic.</p>

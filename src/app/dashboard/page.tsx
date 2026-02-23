@@ -2,6 +2,7 @@
 
 import { calcPanicScore, getPanicColor, getPanicLabel } from "@/lib/panic";
 import { createClient } from "@/lib/supabase";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Flame, LayoutGrid, List, LogOut, Moon, Sun, Upload } from "lucide-react";
@@ -837,6 +838,12 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-white px-4 py-8 text-slate-900 md:px-8 dark:bg-slate-950 dark:text-slate-100">
+      <Link
+        href="/"
+        className="fixed left-4 top-4 z-50 rounded-lg border border-slate-300 bg-white/80 px-2.5 py-1.5 text-xs text-slate-600 shadow-sm backdrop-blur transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-800"
+      >
+        ← Back
+      </Link>
       {surviveToday ? (
         <div className="fixed right-4 top-4 z-50">
           <span className="rounded-full border border-amber-400/80 bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 shadow-sm shadow-amber-200/50 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200 dark:shadow-none">
@@ -874,7 +881,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => handleOpenDraftModal()}
                   disabled={activeAssignments.length === 0}
-                  className="w-full rounded-xl border border-amber-400/80 px-4 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-amber-500/50 dark:text-amber-200 dark:hover:bg-amber-500/10"
+                  className="w-full rounded-xl border border-sky-400/80 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-sky-500/50 dark:text-sky-200 dark:hover:bg-sky-500/10"
                 >
                   Draft Email
                 </button>
