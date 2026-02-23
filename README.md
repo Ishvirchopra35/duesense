@@ -1,6 +1,6 @@
 # Wrap It Up
 
-A student deadline and workload intelligence dashboard that tells you exactly how stressed you should be about each assignment — not just what's due.
+A student deadline and workload intelligence dashboard that tells you exactly how stressed you should be about each assignment, not just what's due.
 
 ## Overview
 
@@ -14,13 +14,19 @@ Built as a full-stack SaaS web app with a freemium model.
 
 **Dashboard — Card View**
 
+<img width="1919" height="987" alt="image" src="https://github.com/user-attachments/assets/0ba586b7-fd1b-4701-a748-993393adf358" />
+
 *Assignment cards with live countdowns, panic scores, and AI diagnosis*
 
 **Dashboard — List View**
 
+<img width="1919" height="987" alt="image" src="https://github.com/user-attachments/assets/3166b814-8e4b-4eb0-bc9c-50b132ea97ec" />
+
 *Compact list view for when assignments pile up*
 
 **Syllabus Upload**
+
+<img width="557" height="274" alt="image" src="https://github.com/user-attachments/assets/3e1f6c4a-d302-46b6-b5e8-d7ce74e2ad84" />
 
 *Drop in a PDF and watch it auto-populate all your assignments*
 
