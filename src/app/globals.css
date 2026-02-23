@@ -6,3 +6,22 @@ body {
   font-family: var(--font-space-mono), monospace;
   transition: background-color 0.3s, color 0.3s;
 }
+
+[data-reveal].reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 500ms ease, transform 500ms ease;
+}
+
+[data-reveal].reveal.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal].reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

@@ -382,7 +382,7 @@ export default function DashboardPage() {
       if (!mounted) return;
 
       if (!user) {
-        router.replace("/");
+        router.replace("/auth");
         return;
       }
 
@@ -401,7 +401,7 @@ export default function DashboardPage() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
-        router.replace("/");
+        router.replace("/auth");
       }
     });
 
@@ -979,7 +979,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={async () => {
                     await supabase.auth.signOut();
-                    router.push("/");
+                    router.push("/auth");
                   }}
                   className="rounded-lg border border-slate-300 p-2.5 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                   aria-label="Logout"

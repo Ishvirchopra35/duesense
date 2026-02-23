@@ -1,158 +1,149 @@
 "use client";
 
-import { createClient } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect } from "react";
 
-export default function Home() {
-  const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
+const panicStates = [
+  {
+    label: "All Good",
+    tone: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+    summary: "Your workload is under control. Keep cruising.",
+  },
+  {
+    label: "Heating Up",
+    tone: "border-orange-400/40 bg-orange-500/10 text-orange-200",
+    summary: "Deadlines are tightening. Plan now, panic less.",
+  },
+  {
+    label: "Code Red",
+    tone: "border-rose-400/40 bg-rose-500/10 text-rose-200",
+    summary: "Critical stack. Focus your next hours or get buried.",
+  },
+];
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const features = [
+  {
+    title: "Panic Scoring",
+    description: "One number that tells you exactly how cooked you are.",
+  },
+  {
+    title: "AI Diagnose",
+    description: "Fast read on what to tackle first when everything feels urgent.",
+  },
+  {
+    title: "Syllabus Upload",
+    description: "Drop in a syllabus and auto-pull what actually matters.",
+  },
+  {
+    title: "Study Planner",
+    description: "Convert chaos into focused blocks you can actually finish.",
+  },
+  {
+    title: "Deadline Conflict Detection",
+    description: "Catch stacked due dates before they slam into each other.",
+  },
+  {
+    title: "Survive Today Mode",
+    description: "Only show what can wreck your next 48 hours.",
+  },
+];
 
+export default function LandingPage() {
   useEffect(() => {
-    const checkSession = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    const elements = document.querySelectorAll<HTMLElement>("[data-reveal]");
 
-      if (user) {
-        router.replace("/dashboard");
-      }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-revealed");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -8% 0px" }
+    );
+
+    elements.forEach((element) => observer.observe(element));
+
+    return () => {
+      observer.disconnect();
     };
-
-    void checkSession();
-  }, [router, supabase]);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    if (mode === "login") {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) {
-        setError(signInError.message);
-        setLoading(false);
-        return;
-      }
-    } else {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (signUpError) {
-        setError(signUpError.message);
-        setLoading(false);
-        return;
-      }
-    }
-
-    setLoading(false);
-    router.push("/dashboard");
-  };
+  }, []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
-      <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30 backdrop-blur">
-        <div className="mb-6 space-y-2 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-white">Wrap It Up</h1>
-          <p className="text-sm text-slate-400">Track deadlines. Kill panic.</p>
+    <main className="min-h-screen bg-slate-950 text-slate-100">
+      <section className="mx-auto max-w-6xl px-5 pb-16 pt-20 sm:px-8 sm:pb-24 sm:pt-28">
+        <div data-reveal className="reveal">
+          <p className="mb-5 inline-flex rounded-full border border-indigo-400/40 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-200">
+            Student productivity, no sugarcoating
+          </p>
+          <h1 className="max-w-4xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-6xl">
+            Your Deadlines Are Stacking. Are You?
+          </h1>
+          <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">
+            Wrap It Up turns assignment chaos into clear next moves. See what is urgent, what can wait,
+            and exactly where your week goes off the rails.
+          </p>
+          <Link
+            href="/auth"
+            className="mt-8 inline-flex rounded-lg bg-indigo-500 px-7 py-3 text-base font-bold text-white transition hover:bg-indigo-400"
+          >
+            Get Started
+          </Link>
         </div>
-
-        <div className="mb-5 grid grid-cols-2 gap-2 rounded-lg bg-slate-950 p-1">
-          <button
-            type="button"
-            onClick={() => setMode("login")}
-            className={`rounded-md px-3 py-2 text-sm transition ${
-              mode === "login"
-                ? "bg-slate-700 text-white"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            Login
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("signup")}
-            className={`rounded-md px-3 py-2 text-sm transition ${
-              mode === "signup"
-                ? "bg-slate-700 text-white"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            Signup
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="email" className="text-sm text-slate-300">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="password" className="text-sm text-slate-300">
-              Password
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                required
-                minLength={6}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 pr-16 text-slate-100 outline-none ring-indigo-500/50 transition focus:ring"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs text-slate-300 transition hover:bg-slate-800 hover:text-white"
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </div>
-          </div>
-
-          {error ? (
-            <p className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-300">
-              {error}
-            </p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading
-              ? "Please wait..."
-              : mode === "login"
-                ? "Log In"
-                : "Create Account"}
-          </button>
-        </form>
       </section>
+
+      <section className="mx-auto max-w-6xl px-5 pb-16 sm:px-8 sm:pb-24">
+        <div data-reveal className="reveal rounded-2xl border border-slate-800 bg-slate-900/70 p-6 sm:p-8">
+          <h2 className="text-2xl font-bold text-white sm:text-3xl">Panic Score</h2>
+          <p className="mt-3 max-w-3xl text-slate-300">
+            One glance, one verdict. Panic Score tells you how much pressure is building before it blows
+            up your week.
+          </p>
+          <div className="mt-7 grid gap-4 md:grid-cols-3">
+            {panicStates.map((state, index) => (
+              <article
+                key={state.label}
+                data-reveal
+                className="reveal rounded-xl border border-slate-800 bg-slate-950/80 p-4"
+                style={{ transitionDelay: `${index * 80}ms` }}
+              >
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${state.tone}`}>
+                  {state.label}
+                </span>
+                <p className="mt-3 text-sm leading-relaxed text-slate-300">{state.summary}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-5 pb-16 sm:px-8 sm:pb-24">
+        <div data-reveal className="reveal">
+          <h2 className="text-2xl font-bold text-white sm:text-3xl">Built for deadline pressure</h2>
+          <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((feature, index) => (
+              <article
+                key={feature.title}
+                data-reveal
+                className="reveal rounded-xl border border-slate-800 bg-slate-900/70 p-5"
+                style={{ transitionDelay: `${index * 70}ms` }}
+              >
+                <h3 className="text-base font-bold text-white">{feature.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-slate-300">{feature.description}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t border-slate-800">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6 text-sm text-slate-400 sm:px-8">
+          <span className="font-bold text-slate-200">Wrap It Up</span>
+          <span>Track deadlines. Kill panic.</span>
+        </div>
+      </footer>
     </main>
   );
 }
