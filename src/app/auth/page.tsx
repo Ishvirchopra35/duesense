@@ -4,7 +4,25 @@ import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+type Turnstile = {
+  render: (
+    container: HTMLElement,
+    options: {
+      sitekey: string;
+      callback: (token: string) => void;
+      "expired-callback": () => void;
+      "error-callback": () => void;
+    }
+  ) => string;
+  reset: (widgetId?: string) => void;
+  remove?: (widgetId: string) => void;
+};
+
+type TurnstileWindow = Window & {
+  turnstile?: Turnstile;
+};
 
 export default function AuthPage() {
   const router = useRouter();
@@ -17,6 +35,8 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
+  const captchaContainerRef = useRef<HTMLDivElement | null>(null);
+  const captchaWidgetIdRef = useRef<string | null>(null);
 
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -34,29 +54,67 @@ export default function AuthPage() {
     void checkSession();
   }, [router, supabase]);
 
+  const handleCaptchaSuccess = useCallback((token: string) => {
+    setCaptchaToken(token);
+    setError(null);
+  }, []);
+
+  const handleCaptchaExpired = useCallback(() => {
+    setCaptchaToken("");
+  }, []);
+
+  const handleCaptchaError = useCallback(() => {
+    setCaptchaToken("");
+    setError("Captcha failed to load. Please try again.");
+  }, []);
+
+  const renderCaptcha = useCallback(() => {
+    if (!turnstileSiteKey || !captchaContainerRef.current) {
+      return;
+    }
+
+    const turnstile = (window as TurnstileWindow).turnstile;
+
+    if (!turnstile) {
+      return;
+    }
+
+    if (captchaWidgetIdRef.current && turnstile.remove) {
+      turnstile.remove(captchaWidgetIdRef.current);
+      captchaWidgetIdRef.current = null;
+      captchaContainerRef.current.innerHTML = "";
+    }
+
+    captchaWidgetIdRef.current = turnstile.render(captchaContainerRef.current, {
+      sitekey: turnstileSiteKey,
+      callback: handleCaptchaSuccess,
+      "expired-callback": handleCaptchaExpired,
+      "error-callback": handleCaptchaError,
+    });
+  }, [handleCaptchaError, handleCaptchaExpired, handleCaptchaSuccess, turnstileSiteKey]);
+
+  const resetCaptcha = useCallback(() => {
+    setCaptchaToken("");
+    const turnstile = (window as TurnstileWindow).turnstile;
+
+    if (turnstile && captchaWidgetIdRef.current) {
+      turnstile.reset(captchaWidgetIdRef.current);
+    }
+  }, []);
+
   useEffect(() => {
-    (window as Window & { onTurnstileSuccess?: (token: string) => void }).onTurnstileSuccess = (
-      token: string
-    ) => {
-      setCaptchaToken(token);
-      setError(null);
-    };
-
-    (window as Window & { onTurnstileExpired?: () => void }).onTurnstileExpired = () => {
-      setCaptchaToken("");
-    };
-
-    (window as Window & { onTurnstileError?: () => void }).onTurnstileError = () => {
-      setCaptchaToken("");
-      setError("Captcha failed to load. Please refresh and try again.");
-    };
+    renderCaptcha();
 
     return () => {
-      delete (window as Window & { onTurnstileSuccess?: (token: string) => void }).onTurnstileSuccess;
-      delete (window as Window & { onTurnstileExpired?: () => void }).onTurnstileExpired;
-      delete (window as Window & { onTurnstileError?: () => void }).onTurnstileError;
+      const turnstile = (window as TurnstileWindow).turnstile;
+
+      if (turnstile && captchaWidgetIdRef.current && turnstile.remove) {
+        turnstile.remove(captchaWidgetIdRef.current);
+      }
+
+      captchaWidgetIdRef.current = null;
     };
-  }, []);
+  }, [renderCaptcha]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -80,7 +138,7 @@ export default function AuthPage() {
     if (!captchaResponse.ok) {
       setError("Captcha verification failed. Please try again.");
       setLoading(false);
-      setCaptchaToken("");
+      resetCaptcha();
       return;
     }
 
@@ -93,7 +151,7 @@ export default function AuthPage() {
       if (signInError) {
         setError(signInError.message);
         setLoading(false);
-        setCaptchaToken("");
+        resetCaptcha();
         return;
       }
     } else {
@@ -105,7 +163,7 @@ export default function AuthPage() {
       if (signUpError) {
         setError(signUpError.message);
         setLoading(false);
-        setCaptchaToken("");
+        resetCaptcha();
         return;
       }
     }
@@ -117,7 +175,12 @@ export default function AuthPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
       {turnstileSiteKey ? (
-        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+          async
+          defer
+          onLoad={renderCaptcha}
+        />
       ) : null}
       <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/30 backdrop-blur">
         <div className="mb-4">
@@ -198,13 +261,7 @@ export default function AuthPage() {
           </div>
 
           {turnstileSiteKey ? (
-            <div
-              className="cf-turnstile"
-              data-sitekey={turnstileSiteKey}
-              data-callback="onTurnstileSuccess"
-              data-expired-callback="onTurnstileExpired"
-              data-error-callback="onTurnstileError"
-            />
+            <div ref={captchaContainerRef} className="min-h-[65px]" />
           ) : (
             <p className="rounded-lg border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
               Missing NEXT_PUBLIC_TURNSTILE_SITE_KEY in environment.
