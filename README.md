@@ -6,7 +6,7 @@ A student deadline and workload intelligence dashboard that tells you exactly ho
 
 Wrap It Up goes beyond a basic to-do list. It calculates a **Panic Score** for every assignment based on how much work you have versus how much time you have left, gives you AI-generated insights, and even reads your syllabus automatically.
 
-Built as a full-stack SaaS web app with a freemium model.
+Built as a full-stack SaaS web app.
 
 ## Screenshots
 
