@@ -10,8 +10,7 @@ type ParsedAssignment = {
 };
 
 const PROMPT =
-  "Extract all assignments, deadlines, and due dates from this document. Return a JSON array only, no other text. Each item should have: title (string), course (string, use the course name from the document or leave blank if unknown), deadline (ISO 8601 datetime string, if no time is found use 23:59 on that date), estimated_hours (number, default to 2 if not mentioned). Return only valid JSON, nothing else.";
-
+  `Extract all assignments, deadlines, and due dates from this document. Return a JSON array only, no other text. Each item should have: title (string), course (string, use the course name from the document or leave blank if unknown), deadline (ISO 8601 datetime string, if no time is found use 23:59 on that date, if no year is found assume the year is ${new Date().getFullYear()}), estimated_hours (number, default to 2 if not mentioned). Return only valid JSON, nothing else.`;
 function normalizeAssignments(items: ParsedAssignment[], userId: string) {
   return items
     .map((item) => {
