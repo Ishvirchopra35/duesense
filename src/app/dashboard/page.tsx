@@ -79,6 +79,7 @@ export default function DashboardPage() {
   const [isAssignmentLimitModalOpen, setIsAssignmentLimitModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
+  const [isStudyPlanOpen, setIsStudyPlanOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState("");
@@ -93,6 +94,10 @@ export default function DashboardPage() {
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
+  const [weeklySummary, setWeeklySummary] = useState<string | null>(null);
+  const [studyPlan, setStudyPlan] = useState<string | null>(null);
+  const [studyPlanLoading, setStudyPlanLoading] = useState(false);
+  const [studyPlanError, setStudyPlanError] = useState<string | null>(null);
 
   const deadlineConflict = useMemo(() => {
     const activeAssignments = assignments.filter((assignment) => !assignment.completed);
@@ -126,6 +131,39 @@ export default function DashboardPage() {
     const titles = Array.from(conflictingTitleSet);
     return { count: titles.length, titles };
   }, [assignments]);
+
+  const activeAssignments = useMemo(
+    () => assignments.filter((assignment) => !assignment.completed),
+    [assignments]
+  );
+
+  const weeklySummaryAssignments = useMemo(
+    () =>
+      activeAssignments.map((assignment) => ({
+        title: assignment.title,
+        course: assignment.course,
+        deadline: assignment.deadline,
+        estimated_hours: assignment.estimated_hours,
+        panic_score: calcPanicScore(assignment.deadline, assignment.estimated_hours),
+      })),
+    [activeAssignments]
+  );
+
+  const studyPlanAssignments = useMemo(
+    () =>
+      activeAssignments.map((assignment) => ({
+        title: assignment.title,
+        course: assignment.course,
+        deadline: assignment.deadline,
+        estimated_hours: assignment.estimated_hours,
+      })),
+    [activeAssignments]
+  );
+
+  const studyPlanLines = useMemo(
+    () => (studyPlan ? studyPlan.split("\n").map((line) => line.trim()).filter(Boolean) : []),
+    [studyPlan]
+  );
 
   const loadAssignments = useCallback(async (currentUserId: string) => {
     const { data, error: fetchError } = await supabase
@@ -251,6 +289,44 @@ export default function DashboardPage() {
       subscription.unsubscribe();
     };
   }, [loadAssignments, loadSubscriptionStatus, router, supabase]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadWeeklySummary = async () => {
+      if (weeklySummaryAssignments.length === 0) {
+        setWeeklySummary(null);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/weekly-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignments: weeklySummaryAssignments }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch weekly summary");
+        }
+
+        const result: { summary?: string } = await response.json();
+        if (active) {
+          setWeeklySummary(result.summary?.trim() || null);
+        }
+      } catch {
+        if (active) {
+          setWeeklySummary(null);
+        }
+      }
+    };
+
+    void loadWeeklySummary();
+
+    return () => {
+      active = false;
+    };
+  }, [weeklySummaryAssignments]);
 
   const handleAddAssignment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -510,6 +586,43 @@ export default function DashboardPage() {
     }
   };
 
+  const handleStudyPlan = async () => {
+    if (studyPlanAssignments.length === 0) {
+      setStudyPlan(null);
+      setStudyPlanError("No active assignments to plan yet.");
+      setIsStudyPlanOpen(true);
+      return;
+    }
+
+    setIsStudyPlanOpen(true);
+    setStudyPlan(null);
+    setStudyPlanError(null);
+    setStudyPlanLoading(true);
+
+    try {
+      const response = await fetch("/api/study-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignments: studyPlanAssignments }),
+      });
+
+      const contentType = response.headers.get("content-type") ?? "";
+      const result: { plan?: string; error?: string } = contentType.includes("application/json")
+        ? await response.json()
+        : {};
+
+      if (!response.ok || !result.plan) {
+        throw new Error(result.error || "Failed to generate study plan.");
+      }
+
+      setStudyPlan(result.plan.trim());
+    } catch (planError) {
+      setStudyPlanError(planError instanceof Error ? planError.message : "Failed to generate study plan.");
+    } finally {
+      setStudyPlanLoading(false);
+    }
+  };
+
   const handleGetExtensionDraft = async (assignment: Assignment) => {
     setDraftLoading((prev) => ({ ...prev, [assignment.id]: true }));
     setError(null);
@@ -612,20 +725,30 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex w-full flex-col items-stretch gap-3 md:w-auto md:items-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingId(null);
-                  setTitle("");
-                  setCourse("");
-                  setDeadline("");
-                  setEstimatedHours("1");
-                  setIsModalOpen(true);
-                }}
-                className="w-full rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400 md:w-auto"
-              >
-                + Add Assignment
-              </button>
+              <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
+                <button
+                  type="button"
+                  onClick={() => void handleStudyPlan()}
+                  disabled={studyPlanLoading || activeAssignments.length === 0}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  {studyPlanLoading ? "Planning..." : "Study Plan"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setTitle("");
+                    setCourse("");
+                    setDeadline("");
+                    setEstimatedHours("1");
+                    setIsModalOpen(true);
+                  }}
+                  className="w-full rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400 md:w-auto"
+                >
+                  + Add Assignment
+                </button>
+              </div>
 
               <div className="flex items-center justify-end gap-2">
                 {mounted && (
@@ -692,6 +815,13 @@ export default function DashboardPage() {
           <p className="rounded-lg border border-rose-300 bg-rose-100 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
             {error}
           </p>
+        ) : null}
+
+        {weeklySummary ? (
+          <div className="rounded-2xl border border-slate-300 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/70">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Situation Report</p>
+            <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{weeklySummary}</p>
+          </div>
         ) : null}
 
         <section className="space-y-8">
@@ -1020,6 +1150,40 @@ export default function DashboardPage() {
                 className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
               >
                 {upgradeLoading ? "Redirecting..." : "Upgrade"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isStudyPlanOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
+            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">7-Day Study Plan</h2>
+
+            {studyPlanLoading ? (
+              <p className="text-sm text-slate-600 dark:text-slate-300">Generating your plan...</p>
+            ) : studyPlanError ? (
+              <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                {studyPlanError}
+              </p>
+            ) : studyPlanLines.length > 0 ? (
+              <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700 dark:text-slate-200">
+                {studyPlanLines.map((line, index) => (
+                  <li key={`${line}-${index}`}>{line}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-600 dark:text-slate-300">No study plan available yet.</p>
+            )}
+
+            <div className="mt-5 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setIsStudyPlanOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Close
               </button>
             </div>
           </div>
