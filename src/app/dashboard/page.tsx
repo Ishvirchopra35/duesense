@@ -4,7 +4,7 @@ import { calcPanicScore, getPanicColor, getPanicLabel } from "@/lib/panic";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Flame, LogOut, Moon, Sun, Upload } from "lucide-react";
+import { Flame, LayoutGrid, List, LogOut, Moon, Sun, Upload } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Assignment = {
@@ -57,8 +57,14 @@ function getPacingText(deadline: string, estimatedHours: number, nowMs: number) 
   return `Spend ~${hoursPerDay.toFixed(1)} hrs/day to finish comfortably`;
 }
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+function getUtcDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function getYesterdayUtcKey(date: Date) {
+  const yesterday = new Date(date);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  return getUtcDateKey(yesterday);
 }
 
 function getPriorityBadgeClass(priority: string) {
@@ -85,7 +91,7 @@ export default function DashboardPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [vibes, setVibes] = useState<Record<string, string>>({});
   const [vibeLoading, setVibeLoading] = useState<Record<string, boolean>>({});
-  const [draftLoading, setDraftLoading] = useState<Record<string, boolean>>({});
+  const [draftLoading, setDraftLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("free");
@@ -111,6 +117,7 @@ export default function DashboardPage() {
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
+  const [draftAssignmentId, setDraftAssignmentId] = useState("");
   const [studyPlan, setStudyPlan] = useState<string | null>(null);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
   const [studyPlanError, setStudyPlanError] = useState<string | null>(null);
@@ -119,6 +126,7 @@ export default function DashboardPage() {
   const [roast, setRoast] = useState<string | null>(null);
   const [roastLoading, setRoastLoading] = useState(false);
   const [isRoastOpen, setIsRoastOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"card" | "list">("card");
 
   const deadlineConflict = useMemo(() => {
     const activeAssignments = assignments.filter((assignment) => !assignment.completed);
@@ -267,14 +275,16 @@ export default function DashboardPage() {
       return;
     }
 
-    const today = startOfDay(new Date());
+    const now = new Date();
+    const todayKey = getUtcDateKey(now);
+    const yesterdayKey = getYesterdayUtcKey(now);
 
     if (!data) {
       const { error: insertError } = await supabase.from("subscriptions").insert({
         user_id: currentUserId,
         status: "free",
         streak: 1,
-        last_active: today.toISOString(),
+        last_active: `${todayKey}T00:00:00.000Z`,
       });
 
       if (insertError) {
@@ -286,20 +296,17 @@ export default function DashboardPage() {
       return;
     }
 
-    const lastActive = data.last_active ? startOfDay(new Date(data.last_active)) : null;
-    const diffDays = lastActive
-      ? Math.floor((today.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24))
-      : null;
+    const lastActiveKey = data.last_active ? getUtcDateKey(new Date(data.last_active)) : null;
 
-    if (diffDays === 0) {
+    if (lastActiveKey === todayKey) {
       setStreak(data.streak ?? 0);
       return;
     }
 
-    const nextStreak = diffDays === 1 ? (data.streak ?? 0) + 1 : 1;
+    const nextStreak = lastActiveKey === yesterdayKey ? (data.streak ?? 0) + 1 : 1;
     const { error: updateError } = await supabase
       .from("subscriptions")
-      .update({ streak: nextStreak, last_active: today.toISOString() })
+      .update({ streak: nextStreak, last_active: `${todayKey}T00:00:00.000Z` })
       .eq("user_id", currentUserId);
 
     if (updateError) {
@@ -344,6 +351,17 @@ export default function DashboardPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    const savedView = window.localStorage.getItem("duesense:view");
+    if (savedView === "list" || savedView === "card") {
+      setViewMode(savedView);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("duesense:view", viewMode);
+  }, [viewMode]);
 
   useEffect(() => {
     let mounted = true;
@@ -721,8 +739,23 @@ export default function DashboardPage() {
     }
   };
 
-  const handleGetExtensionDraft = async (assignment: Assignment) => {
-    setDraftLoading((prev) => ({ ...prev, [assignment.id]: true }));
+  const handleOpenDraftModal = () => {
+    setDraftSubject("");
+    setDraftBody("");
+    setCopySuccess(false);
+    setDraftAssignmentId(activeAssignments[0]?.id ?? "");
+    setIsDraftModalOpen(true);
+  };
+
+  const handleGenerateDraft = async () => {
+    const assignment = activeAssignments.find((item) => item.id === draftAssignmentId);
+
+    if (!assignment) {
+      setError("Select an assignment to generate a draft.");
+      return;
+    }
+
+    setDraftLoading(true);
     setError(null);
 
     try {
@@ -748,11 +781,10 @@ export default function DashboardPage() {
       setDraftSubject(result.subject);
       setDraftBody(result.body);
       setCopySuccess(false);
-      setIsDraftModalOpen(true);
     } catch (draftError) {
       setError(draftError instanceof Error ? draftError.message : "Could not generate extension draft right now.");
     } finally {
-      setDraftLoading((prev) => ({ ...prev, [assignment.id]: false }));
+      setDraftLoading(false);
     }
   };
 
@@ -833,6 +865,14 @@ export default function DashboardPage() {
               <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
                 <button
                   type="button"
+                  onClick={() => handleOpenDraftModal()}
+                  disabled={activeAssignments.length === 0}
+                  className="w-full rounded-xl border border-amber-400/80 px-4 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-amber-500/50 dark:text-amber-200 dark:hover:bg-amber-500/10"
+                >
+                  Draft Email
+                </button>
+                <button
+                  type="button"
                   onClick={() => void handleRoast()}
                   disabled={roastLoading}
                   className="w-full rounded-xl border border-rose-400/80 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-rose-500/50 dark:text-rose-200 dark:hover:bg-rose-500/10"
@@ -876,6 +916,34 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center rounded-lg border border-slate-300 p-1 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("card")}
+                    className={`rounded-md p-1.5 transition ${
+                      viewMode === "card"
+                        ? "bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
+                        : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                    }`}
+                    aria-label="Card view"
+                    title="Card view"
+                  >
+                    <LayoutGrid size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("list")}
+                    className={`rounded-md p-1.5 transition ${
+                      viewMode === "list"
+                        ? "bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
+                        : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                    }`}
+                    aria-label="List view"
+                    title="List view"
+                  >
+                    <List size={16} />
+                  </button>
+                </div>
                 {mounted && (
                   <button
                     type="button"
@@ -951,7 +1019,7 @@ export default function DashboardPage() {
         ) : null}
 
         <section className="space-y-8">
-          {filteredAssignments.length > 0 && (
+          {filteredAssignments.length > 0 && viewMode === "card" && (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {filteredAssignments.map((assignment) => {
             const { label } = formatCountdown(assignment.deadline, nowMs);
@@ -1029,14 +1097,6 @@ export default function DashboardPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleGetExtensionDraft(assignment)}
-                    disabled={draftLoading[assignment.id]}
-                    className="rounded-lg border border-amber-500 px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/40"
-                  >
-                    {draftLoading[assignment.id] ? "Drafting..." : "Get Extension"}
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => handleCompleteAssignment(assignment.id)}
                     className="rounded-lg border border-emerald-500 px-3 py-2 text-sm text-emerald-600 transition hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
                   >
@@ -1083,13 +1143,104 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {filteredAssignments.length > 0 && viewMode === "list" && (
+            <div className="space-y-3">
+              {filteredAssignments.map((assignment) => {
+                const { label } = formatCountdown(assignment.deadline, nowMs);
+                const panicScore = calcPanicScore(
+                  assignment.deadline,
+                  assignment.estimated_hours,
+                  assignment.priority ?? "Medium"
+                );
+                const panicColor = getPanicColor(panicScore);
+                const panicLabel = getPanicLabel(panicScore);
+                const priorityLabel = assignment.priority ?? "Medium";
+
+                return (
+                  <div
+                    key={assignment.id}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 shadow-lg shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-black/20"
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-base font-semibold text-slate-900 dark:text-white">{assignment.title}</h2>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
+                                priorityLabel
+                              )}`}
+                            >
+                              {priorityLabel}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{assignment.course}</p>
+                        </div>
+                        <div className="text-sm font-semibold text-cyan-600 dark:text-cyan-300">{label}</div>
+                        <div
+                          className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold"
+                          style={{ color: panicColor, borderColor: panicColor }}
+                        >
+                          {panicLabel} · {panicScore}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {diagnoseLimitReached[assignment.id] ? (
+                          <button
+                            type="button"
+                            onClick={() => void startUpgradeCheckout()}
+                            disabled={upgradeLoading}
+                            className="rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                          >
+                            {upgradeLoading ? "Redirecting..." : "Upgrade"}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleVibe(assignment)}
+                            disabled={vibeLoading[assignment.id]}
+                            className="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-cyan-500 dark:text-slate-950 dark:hover:bg-cyan-400"
+                          >
+                            {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleEditAssignment(assignment)}
+                          className="rounded-lg border border-blue-500 px-3 py-1.5 text-xs text-blue-600 transition hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCompleteAssignment(assignment.id)}
+                          className="rounded-lg border border-emerald-500 px-3 py-1.5 text-xs text-emerald-600 transition hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                        >
+                          Done
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(assignment.id)}
+                          className="rounded-lg border border-rose-500 px-3 py-1.5 text-xs text-rose-600 transition hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {surviveToday && filteredAssignments.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-6 text-center text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
               Nothing due in the next 48 hours. Go touch grass.
             </div>
           ) : null}
 
-          {assignments.filter((a) => a.completed).length > 0 && (
+          {assignments.filter((a) => a.completed).length > 0 && viewMode === "card" && (
             <div>
               <h3 className="mb-4 text-lg font-semibold text-slate-600 dark:text-slate-400">Completed</h3>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1138,6 +1289,63 @@ export default function DashboardPage() {
                           </button>
                         </div>
                       </article>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {assignments.filter((a) => a.completed).length > 0 && viewMode === "list" && (
+            <div>
+              <h3 className="mb-4 text-lg font-semibold text-slate-600 dark:text-slate-400">Completed</h3>
+              <div className="space-y-3">
+                {assignments
+                  .filter((a) => a.completed)
+                  .map((assignment) => {
+                    const { label } = formatCountdown(assignment.deadline, nowMs);
+                    const priorityLabel = assignment.priority ?? "Medium";
+
+                    return (
+                      <div
+                        key={assignment.id}
+                        className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 shadow-lg shadow-slate-200/30 opacity-70 dark:border-slate-800 dark:bg-slate-900/30 dark:shadow-black/20"
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h2 className="text-base font-semibold text-slate-900 line-through dark:text-white">{assignment.title}</h2>
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
+                                    priorityLabel
+                                  )}`}
+                                >
+                                  {priorityLabel}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 line-through dark:text-slate-400">{assignment.course}</p>
+                            </div>
+                            <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleUndoAssignment(assignment.id)}
+                              className="rounded-lg border border-amber-500 px-3 py-1.5 text-xs text-amber-600 transition hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                            >
+                              Undo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(assignment.id)}
+                              className="rounded-lg border border-rose-500 px-3 py-1.5 text-xs text-rose-600 transition hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
               </div>
@@ -1391,12 +1599,47 @@ export default function DashboardPage() {
           <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
             <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Extension Email Draft</h2>
 
-            <div className="space-y-3 rounded-lg border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200">
-              <p>
-                <span className="font-semibold">Subject:</span> {draftSubject}
-              </p>
-              <p className="whitespace-pre-wrap">{draftBody}</p>
-            </div>
+            {activeAssignments.length === 0 ? (
+              <p className="text-sm text-slate-600 dark:text-slate-300">No active assignments to draft.</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="draftAssignment" className="text-sm text-slate-700 dark:text-slate-300">
+                    Assignment
+                  </label>
+                  <select
+                    id="draftAssignment"
+                    value={draftAssignmentId}
+                    onChange={(event) => setDraftAssignmentId(event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                  >
+                    {activeAssignments.map((assignment) => (
+                      <option key={assignment.id} value={assignment.id}>
+                        {assignment.title} — {assignment.course}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateDraft()}
+                  disabled={draftLoading}
+                  className="w-full rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                >
+                  {draftLoading ? "Generating..." : "Generate"}
+                </button>
+              </div>
+            )}
+
+            {draftSubject && draftBody ? (
+              <div className="mt-4 space-y-3 rounded-lg border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200">
+                <p>
+                  <span className="font-semibold">Subject:</span> {draftSubject}
+                </p>
+                <p className="whitespace-pre-wrap">{draftBody}</p>
+              </div>
+            ) : null}
 
             <div className="mt-5 flex items-center justify-end gap-2">
               {copySuccess ? (
@@ -1412,7 +1655,8 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => void handleCopyDraft()}
-                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                disabled={!draftSubject || !draftBody}
+                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
               >
                 Copy
               </button>
