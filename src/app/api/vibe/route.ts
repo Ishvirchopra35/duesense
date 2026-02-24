@@ -3,17 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(req: NextRequest) {
   const { panicScore, title, hoursLeft } = await req.json()
 
-  const systemPrompt = `You are a blunt assignment hype voice.
-Response must be 1 or 2 sentences only.
-If you write more than 2 sentences, the output is wrong.
-Each sentence should stay under 20 words.
-Tone: punchy, witty, direct, and helpful.
-Add concrete urgency or advice, but keep it concise.
-No emojis or quotes.`
-
-  const userPrompt = `Assignment: "${title}"
+  const prompt = `You're a smart friend giving real talk about this assignment.
+Assignment: "${title}"
 Panic score: ${panicScore}/100
-Hours left: ${hoursLeft}`
+Hours left: ${hoursLeft}
+Short, punchy, humurous, be taunty, be quirky, be aggressive, spice it up, make it interesting. 
+You don't always have to be positive, spice it up, keep it random, keep your friend on their toes.
+CRITICAL: Your response MUST be MAXIMUM 2 sentences. Not 3. Not 4. Exactly 1 or 2 sentences only. No quotes. If you write more than 2 sentences, you failed.
+Make sure each sentence is maximum 20 words.`
 
   const response = await fetch(
     'https://api.groq.com/openai/v1/chat/completions',
@@ -25,10 +22,7 @@ Hours left: ${hoursLeft}`
       },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
+        messages: [{ role: 'user', content: prompt }],
         max_tokens: 150
       })
     }
