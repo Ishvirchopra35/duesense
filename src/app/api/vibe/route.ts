@@ -10,7 +10,7 @@ Hours left: ${hoursLeft}
 Short, punchy, humurous, be taunty, be quirky, be aggressive, spice it up, make it interesting. 
 You don't always have to be positive, spice it up, keep it random, keep your friend on their toes.
 CRITICAL: Your response MUST be MAXIMUM 2 sentences. Not 3. Not 4. Exactly 1 or 2 sentences only. No quotes. If you write more than 2 sentences, you failed.
-Make sure each sentence is AT LEAST 15 words and AT MOST 20 words.`
+Make sure each sentence is AT LEAST 30 words and AT MOST 40 words.`
 
   const response = await fetch(
     'https://api.groq.com/openai/v1/chat/completions',

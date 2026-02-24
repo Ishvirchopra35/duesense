@@ -31,25 +31,16 @@ export async function POST(request: Request) {
       )
       .join("\n");
 
-    const prompt = `Create a 7-day study plan starting today for the student. Use the assignments below.
+    const prompt = `Generate a 7-day study plan based on these assignments. Return ONLY a valid JSON array with exactly 7 objects, one per day. Each object should have: day (string, e.g. "Monday"), tasks (array of strings, each task as a short sentence). If no tasks are needed for a day, return an empty array for tasks. Return nothing except the JSON array.
 
 Assignments:
 ${assignmentList}
 
-Format strictly as a simple list grouped by day, one line per day:
-Monday: ...
-Tuesday: ...
-Wednesday: ...
-Thursday: ...
-Friday: ...
-Saturday: ...
-Sunday: ...
-
 Rules:
-- Plain English, concise.
-- Include time estimates per task.
-- Make sure the workload fits the deadlines.
-- No extra commentary, no markdown, no bullets.`;
+- Include time estimates per task
+- Make sure the workload fits the deadlines
+- Spread work intelligently across days
+- Return ONLY valid JSON, no markdown, no code blocks, no extra text`;
 
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -70,13 +61,34 @@ Rules:
     }
 
     const groqData = await groqResponse.json();
-    const plan = groqData?.choices?.[0]?.message?.content?.trim();
+    const planText = groqData?.choices?.[0]?.message?.content?.trim();
 
-    if (!plan || typeof plan !== "string") {
+    if (!planText || typeof planText !== "string") {
       return NextResponse.json({ error: "Empty response from Groq." }, { status: 502 });
     }
 
-    return NextResponse.json({ plan });
+    // Parse the JSON response from Groq
+    try {
+      // Remove markdown code blocks if present
+      const cleanedText = planText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsedPlan = JSON.parse(cleanedText);
+
+      // Validate the structure
+      if (!Array.isArray(parsedPlan) || parsedPlan.length !== 7) {
+        throw new Error("Invalid plan structure");
+      }
+
+      // Ensure each day has the correct structure
+      const validatedPlan = parsedPlan.map((dayPlan) => ({
+        day: String(dayPlan.day || ""),
+        tasks: Array.isArray(dayPlan.tasks) ? dayPlan.tasks.map(String) : [],
+      }));
+
+      return NextResponse.json({ plan: validatedPlan });
+    } catch (parseError) {
+      // If JSON parsing fails, return the raw text as fallback
+      return NextResponse.json({ plan: planText });
+    }
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to generate study plan." },

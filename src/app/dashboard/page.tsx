@@ -1,11 +1,11 @@
 "use client";
 
-import { calcPanicScore, getPanicColor, getPanicLabel } from "@/lib/panic";
+import { calcPanicScore, getPanicLabel } from "@/lib/panic";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Flame, LayoutGrid, List, LogOut, Moon, Sun, Upload } from "lucide-react";
+import { Calendar, Flame, LayoutGrid, List, LogOut, Moon, Settings, Sun, Upload } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Assignment = {
@@ -19,6 +19,18 @@ type Assignment = {
 };
 
 type SubscriptionStatus = "free" | "premium";
+
+function formatConflictTitles(titles: string[]) {
+  if (titles.length <= 1) {
+    return titles[0] ?? "";
+  }
+
+  if (titles.length === 2) {
+    return `${titles[0]} and ${titles[1]}`;
+  }
+
+  return `${titles.slice(0, -1).join(", ")}, and ${titles[titles.length - 1]}`;
+}
 
 function formatCountdown(deadline: string, nowMs: number) {
   const diffMs = new Date(deadline).getTime() - nowMs;
@@ -71,12 +83,36 @@ function getYesterdayUtcKey(date: Date) {
 function getPriorityBadgeClass(priority: string) {
   switch (priority) {
     case "High":
-      return "border-rose-400/80 bg-rose-100 text-rose-700 dark:border-rose-500/60 dark:bg-rose-500/10 dark:text-rose-200";
+      return "border-rose-300 bg-rose-100 text-rose-700 dark:border-rose-400/50 dark:bg-rose-500/25 dark:text-rose-100";
     case "Low":
-      return "border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300";
+      return "border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-400/50 dark:bg-emerald-500/25 dark:text-emerald-100";
     default:
-      return "border-blue-400/80 bg-blue-100 text-blue-700 dark:border-blue-500/60 dark:bg-blue-500/10 dark:text-blue-200";
+      return "border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-400/50 dark:bg-amber-500/25 dark:text-amber-100";
   }
+}
+
+function getPanicBadgeClass(score: number) {
+  if (score < 35) {
+    return "border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-400/50 dark:bg-emerald-500/25 dark:text-emerald-100";
+  }
+
+  if (score < 70) {
+    return "border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-400/50 dark:bg-amber-500/25 dark:text-amber-100";
+  }
+
+  return "border-rose-300 bg-rose-100 text-rose-700 dark:border-rose-400/50 dark:bg-rose-500/25 dark:text-rose-100";
+}
+
+function getPanicCardAccentClass(score: number) {
+  if (score < 35) {
+    return "border-l-[3px] border-l-emerald-500/80 dark:border-l-emerald-400/70";
+  }
+
+  if (score < 70) {
+    return "border-l-[3px] border-l-amber-500/80 dark:border-l-amber-400/70";
+  }
+
+  return "border-l-[3px] border-l-rose-500/80 dark:border-l-rose-400/70";
 }
 
 const FREEMIUM_ENABLED = process.env.NEXT_PUBLIC_ENABLE_FREEMIUM === "true";
@@ -119,7 +155,7 @@ export default function DashboardPage() {
   const [draftBody, setDraftBody] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
   const [draftAssignmentId, setDraftAssignmentId] = useState("");
-  const [studyPlan, setStudyPlan] = useState<string | null>(null);
+  const [studyPlan, setStudyPlan] = useState<string | Array<{ day: string; tasks: string[] }> | null>(null);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
   const [studyPlanError, setStudyPlanError] = useState<string | null>(null);
   const [surviveToday, setSurviveToday] = useState(false);
@@ -129,38 +165,73 @@ export default function DashboardPage() {
   const [isRoastOpen, setIsRoastOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const [dismissConflictBanner, setDismissConflictBanner] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [defaultPriority, setDefaultPriority] = useState<"Low" | "Medium" | "High">("Medium");
+  const [defaultView, setDefaultView] = useState<"card" | "list">("card");
+  const [compactMode, setCompactMode] = useState(false);
+  const [tempDefaultPriority, setTempDefaultPriority] = useState<"Low" | "Medium" | "High">("Medium");
+  const [tempDefaultView, setTempDefaultView] = useState<"card" | "list">("card");
+  const [tempCompactMode, setTempCompactMode] = useState(false);
+  const [sortBy, setSortBy] = useState<"deadline" | "panic" | "course" | "priority">("deadline");
+  const [filterCourse, setFilterCourse] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "completed">("active");
 
   const deadlineConflict = useMemo(() => {
     const activeAssignments = assignments.filter((assignment) => !assignment.completed);
 
     if (activeAssignments.length < 2) {
-      return { count: 0, titles: [] as string[] };
+      return { count: 0, groups: [] as string[][] };
     }
 
     const sortedByDeadline = [...activeAssignments].sort(
       (a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
     );
 
-    const conflictingTitleSet = new Set<string>();
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-    for (let i = 0; i < sortedByDeadline.length; i += 1) {
+    const connectedComponents: Assignment[][] = [];
+    let componentStart = 0;
+
+    for (let i = 1; i < sortedByDeadline.length; i += 1) {
+      const previousDeadline = new Date(sortedByDeadline[i - 1].deadline).getTime();
       const currentDeadline = new Date(sortedByDeadline[i].deadline).getTime();
 
-      for (let j = i + 1; j < sortedByDeadline.length; j += 1) {
-        const comparisonDeadline = new Date(sortedByDeadline[j].deadline).getTime();
-
-        if (comparisonDeadline - currentDeadline > ONE_DAY_MS) {
-          break;
-        }
-
-        conflictingTitleSet.add(sortedByDeadline[i].title);
-        conflictingTitleSet.add(sortedByDeadline[j].title);
+      if (currentDeadline - previousDeadline > ONE_DAY_MS) {
+        connectedComponents.push(sortedByDeadline.slice(componentStart, i));
+        componentStart = i;
       }
     }
 
-    const titles = Array.from(conflictingTitleSet);
-    return { count: titles.length, titles };
+    connectedComponents.push(sortedByDeadline.slice(componentStart));
+
+    const groups: string[][] = [];
+
+    connectedComponents.forEach((component) => {
+      if (component.length < 2) {
+        return;
+      }
+
+      const firstDeadline = new Date(component[0].deadline).getTime();
+      const lastDeadline = new Date(component[component.length - 1].deadline).getTime();
+
+      if (lastDeadline - firstDeadline <= ONE_DAY_MS) {
+        groups.push(component.map((assignment) => assignment.title));
+        return;
+      }
+
+      for (let i = 0; i < component.length - 1; i += 1) {
+        const currentDeadline = new Date(component[i].deadline).getTime();
+        const nextDeadline = new Date(component[i + 1].deadline).getTime();
+
+        if (nextDeadline - currentDeadline <= ONE_DAY_MS) {
+          groups.push([component[i].title, component[i + 1].title]);
+        }
+      }
+    });
+
+    const uniqueConflictingTitles = new Set(groups.flat());
+
+    return { count: uniqueConflictingTitles.size, groups };
   }, [assignments]);
 
   const activeAssignments = useMemo(
@@ -168,17 +239,56 @@ export default function DashboardPage() {
     [assignments]
   );
 
+  const uniqueCourses = useMemo(() => {
+    const courses = new Set(assignments.map((a) => a.course));
+    return Array.from(courses).sort();
+  }, [assignments]);
+
   const filteredAssignments = useMemo(() => {
-    if (!surviveToday) {
-      return activeAssignments;
+    // Start with base filtering based on status
+    let filtered = assignments;
+    
+    if (filterStatus === "active") {
+      filtered = filtered.filter((a) => !a.completed);
+    } else if (filterStatus === "completed") {
+      filtered = filtered.filter((a) => a.completed);
     }
 
-    const WINDOW_MS = 48 * 60 * 60 * 1000;
-    return activeAssignments.filter((assignment) => {
-      const diffMs = new Date(assignment.deadline).getTime() - nowMs;
-      return diffMs > 0 && diffMs <= WINDOW_MS;
+    // Apply survive today mode if active (only for non-completed assignments)
+    if (surviveToday && filterStatus !== "completed") {
+      const WINDOW_MS = 48 * 60 * 60 * 1000;
+      filtered = filtered.filter((assignment) => {
+        const diffMs = new Date(assignment.deadline).getTime() - nowMs;
+        return diffMs > 0 && diffMs <= WINDOW_MS;
+      });
+    }
+
+    // Filter by course
+    if (filterCourse !== "all") {
+      filtered = filtered.filter((a) => a.course === filterCourse);
+    }
+
+    // Sort the filtered assignments
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === "deadline") {
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      } else if (sortBy === "panic") {
+        const panicA = calcPanicScore(a.deadline, a.estimated_hours, a.priority ?? "Medium");
+        const panicB = calcPanicScore(b.deadline, b.estimated_hours, b.priority ?? "Medium");
+        return panicB - panicA; // Highest first
+      } else if (sortBy === "course") {
+        return a.course.localeCompare(b.course);
+      } else if (sortBy === "priority") {
+        const priorityOrder = { High: 3, Medium: 2, Low: 1 };
+        const priorityA = priorityOrder[a.priority ?? "Medium"];
+        const priorityB = priorityOrder[b.priority ?? "Medium"];
+        return priorityB - priorityA; // Highest first
+      }
+      return 0;
     });
-  }, [activeAssignments, nowMs, surviveToday]);
+
+    return sorted;
+  }, [assignments, filterStatus, filterCourse, sortBy, surviveToday, nowMs]);
 
   const studyPlanAssignments = useMemo(
     () =>
@@ -209,9 +319,68 @@ export default function DashboardPage() {
   );
 
   const studyPlanLines = useMemo(
-    () => (studyPlan ? studyPlan.split("\n").map((line) => line.trim()).filter(Boolean) : []),
+    () => {
+      if (!studyPlan) return [];
+      if (typeof studyPlan === "string") {
+        return studyPlan.split("\n").map((line) => line.trim()).filter(Boolean);
+      }
+      return [];
+    },
     [studyPlan]
   );
+
+  const parsedStudyPlan = useMemo(() => {
+    if (!studyPlan) return [];
+
+    const days = [
+      { name: "Monday", color: "indigo", bgColor: "bg-indigo-50 dark:bg-indigo-500/10", textColor: "text-indigo-700 dark:text-indigo-300", borderColor: "border-indigo-200 dark:border-indigo-500/30" },
+      { name: "Tuesday", color: "violet", bgColor: "bg-violet-50 dark:bg-violet-500/10", textColor: "text-violet-700 dark:text-violet-300", borderColor: "border-violet-200 dark:border-violet-500/30" },
+      { name: "Wednesday", color: "rose", bgColor: "bg-rose-50 dark:bg-rose-500/10", textColor: "text-rose-700 dark:text-rose-300", borderColor: "border-rose-200 dark:border-rose-500/30" },
+      { name: "Thursday", color: "emerald", bgColor: "bg-emerald-50 dark:bg-emerald-500/10", textColor: "text-emerald-700 dark:text-emerald-300", borderColor: "border-emerald-200 dark:border-emerald-500/30" },
+      { name: "Friday", color: "amber", bgColor: "bg-amber-50 dark:bg-amber-500/10", textColor: "text-amber-700 dark:text-amber-300", borderColor: "border-amber-200 dark:border-amber-500/30" },
+      { name: "Saturday", color: "sky", bgColor: "bg-sky-50 dark:bg-sky-500/10", textColor: "text-sky-700 dark:text-sky-300", borderColor: "border-sky-200 dark:border-sky-500/30" },
+      { name: "Sunday", color: "orange", bgColor: "bg-orange-50 dark:bg-orange-500/10", textColor: "text-orange-700 dark:text-orange-300", borderColor: "border-orange-200 dark:border-orange-500/30" }
+    ];
+
+    // If studyPlan is already structured (array format from API)
+    if (Array.isArray(studyPlan)) {
+      return studyPlan.map((dayData) => {
+        const dayInfo = days.find((d) => d.name.toLowerCase() === dayData.day.toLowerCase()) || days[0];
+        return {
+          ...dayInfo,
+          tasks: dayData.tasks || [],
+        };
+      });
+    }
+
+    // Legacy: Parse string format
+    const lines = studyPlan.split("\n").map((line) => line.trim()).filter(Boolean);
+    const result: Array<{ name: string; color: string; bgColor: string; textColor: string; borderColor: string; tasks: string[] }> = [];
+
+    let currentDay: { name: string; color: string; bgColor: string; textColor: string; borderColor: string; tasks: string[] } | null = null;
+
+    for (const line of lines) {
+      const dayMatch = days.find((d) => line.toLowerCase().startsWith(d.name.toLowerCase()));
+      
+      if (dayMatch) {
+        if (currentDay) {
+          result.push(currentDay);
+        }
+        currentDay = { ...dayMatch, tasks: [] };
+      } else if (currentDay && line) {
+        const cleanTask = line.replace(/^[-•*]\s*/, "").trim();
+        if (cleanTask) {
+          currentDay.tasks.push(cleanTask);
+        }
+      }
+    }
+
+    if (currentDay) {
+      result.push(currentDay);
+    }
+
+    return result;
+  }, [studyPlan]);
 
   const loadAssignments = useCallback(async (currentUserId: string) => {
     const { data, error: fetchError } = await supabase
@@ -366,6 +535,27 @@ export default function DashboardPage() {
   }, [viewMode]);
 
   useEffect(() => {
+    const savedDefaultPriority = window.localStorage.getItem("duesense:defaultPriority");
+    if (savedDefaultPriority === "Low" || savedDefaultPriority === "Medium" || savedDefaultPriority === "High") {
+      setDefaultPriority(savedDefaultPriority);
+      setTempDefaultPriority(savedDefaultPriority);
+    }
+
+    const savedDefaultView = window.localStorage.getItem("duesense:defaultView");
+    if (savedDefaultView === "list" || savedDefaultView === "card") {
+      setDefaultView(savedDefaultView);
+      setTempDefaultView(savedDefaultView);
+      setViewMode(savedDefaultView);
+    }
+
+    const savedCompactMode = window.localStorage.getItem("duesense:compactMode");
+    if (savedCompactMode === "true") {
+      setCompactMode(true);
+      setTempCompactMode(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (deadlineConflict.count === 0) {
       setDismissConflictBanner(false);
     }
@@ -490,7 +680,7 @@ export default function DashboardPage() {
     setCourse("");
     setDeadline("");
     setEstimatedHours("1");
-    setPriority("Medium");
+    setPriority(defaultPriority);
     setEditingId(null);
     setIsModalOpen(false);
     setSaving(false);
@@ -702,7 +892,7 @@ export default function DashboardPage() {
       });
 
       const contentType = response.headers.get("content-type") ?? "";
-      const result: { plan?: string; error?: string } = contentType.includes("application/json")
+      const result: { plan?: string | Array<{ day: string; tasks: string[] }>; error?: string } = contentType.includes("application/json")
         ? await response.json()
         : {};
 
@@ -710,7 +900,12 @@ export default function DashboardPage() {
         throw new Error(result.error || "Failed to generate study plan.");
       }
 
-      setStudyPlan(result.plan.trim());
+      // Handle both string (legacy) and structured array responses
+      if (typeof result.plan === "string") {
+        setStudyPlan(result.plan.trim());
+      } else {
+        setStudyPlan(result.plan);
+      }
     } catch (planError) {
       setStudyPlanError(planError instanceof Error ? planError.message : "Failed to generate study plan.");
     } finally {
@@ -830,49 +1025,50 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-4 text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+      <main className="flex min-h-screen items-center justify-center bg-white px-4 text-[#4a4a4a] dark:bg-[#111318] dark:text-slate-300">
         Loading dashboard...
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-white px-4 py-8 text-slate-900 md:px-8 dark:bg-slate-950 dark:text-slate-100">
+    <main className="min-h-screen bg-white px-4 py-8 text-[#1a1a1a] md:px-8 dark:bg-[#111318] dark:text-slate-100">
       <Link
         href="/"
-        className="fixed left-4 top-4 z-50 rounded-lg border border-slate-300 bg-white/80 px-2.5 py-1.5 text-xs text-slate-600 shadow-sm backdrop-blur transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-800"
+        className="fixed left-4 top-4 z-50 rounded-lg border border-slate-300 bg-white/90 px-2.5 py-1.5 text-xs text-slate-600 shadow-sm backdrop-blur transition hover:bg-white dark:border-slate-700 dark:bg-[#161a22]/90 dark:text-slate-300 dark:hover:bg-[#1b202b]"
       >
         ← Back
       </Link>
       {surviveToday ? (
         <div className="fixed right-4 top-4 z-50">
-          <span className="rounded-full border border-amber-400/80 bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 shadow-sm shadow-amber-200/50 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200 dark:shadow-none">
+          <span className="rounded-full border border-amber-400/50 bg-amber-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-400/40 dark:bg-amber-500/15 dark:text-amber-200">
             Filtering: due in 48h
           </span>
         </div>
       ) : null}
       <div className="mx-auto max-w-6xl space-y-6">
-        <header className="relative overflow-hidden rounded-3xl border border-slate-300/90 bg-gradient-to-br from-white/90 via-slate-50/80 to-indigo-50/70 p-7 shadow-2xl shadow-indigo-900/10 ring-1 ring-indigo-300/30 md:p-9 dark:border-slate-800 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-indigo-950/40 dark:shadow-black/30 dark:ring-indigo-500/20">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.12),transparent_45%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.2),transparent_45%)]" />
+        <header className="relative overflow-hidden rounded-3xl border border-slate-300/90 bg-slate-50/80 p-7 shadow-lg shadow-slate-200/30 md:p-8 dark:border-slate-800 dark:bg-[#161a22] dark:shadow-black/25">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(99,102,241,0.12)_0%,rgba(139,92,246,0.10)_45%,rgba(244,63,94,0.08)_100%)] dark:bg-[linear-gradient(120deg,rgba(99,102,241,0.20)_0%,rgba(139,92,246,0.18)_45%,rgba(244,63,94,0.14)_100%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.14),transparent_55%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(129,140,248,0.24),transparent_55%)]" />
 
-          <div className="relative flex flex-col gap-7 md:flex-row md:items-start md:justify-between">
+          <div className="relative flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
             <div className="space-y-2">
               <div className="flex items-center gap-3">
-                <h1 className="text-4xl font-bold tracking-tight text-slate-900 md:text-5xl dark:text-white">Wrap It Up Dashboard</h1>
+                <h1 className="bg-gradient-to-r from-indigo-600 via-violet-600 to-rose-500 bg-clip-text text-4xl font-bold tracking-tight text-transparent md:text-5xl dark:from-indigo-300 dark:via-violet-300 dark:to-rose-300">Wrap It Up Dashboard</h1>
                 {FREEMIUM_ENABLED && (
                   <span
-                    className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${
+                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ${
                       subscriptionStatus === "premium"
-                        ? "border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-300"
-                        : "border-slate-400 bg-slate-200 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        ? "border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-400/50 dark:bg-emerald-500/25 dark:text-emerald-100"
+                        : "border-slate-300 bg-slate-100 text-[#4a4a4a] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
                     }`}
                   >
                     {subscriptionStatus === "premium" ? "PREMIUM" : "FREE"}
                   </span>
                 )}
               </div>
-              <p className="text-sm text-slate-600 md:text-base dark:text-slate-400">Plan your work with clarity and stay ahead of every deadline.</p>
-              <p className="text-xs text-slate-500 dark:text-slate-500">Live deadline tracking with panic intelligence.</p>
+              <p className="text-sm font-medium text-[#2f2f2f] md:text-base dark:text-slate-200">Plan your work with clarity and stay ahead of every deadline.</p>
+              <p className="text-xs text-[#3f3f3f] dark:text-slate-300">Live deadline tracking with calm, readable priorities.</p>
             </div>
 
             <div className="flex w-full flex-col items-stretch gap-3 md:w-auto md:items-end">
@@ -881,7 +1077,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => handleOpenDraftModal()}
                   disabled={activeAssignments.length === 0}
-                  className="w-full rounded-xl border border-sky-400/80 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-sky-500/50 dark:text-sky-200 dark:hover:bg-sky-500/10"
+                  className="w-full rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-[#111111] transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-blue-400/40 dark:bg-blue-500/15 dark:text-slate-100 dark:hover:bg-blue-500/20"
                 >
                   Draft Email
                 </button>
@@ -889,7 +1085,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => void handleRoast()}
                   disabled={roastLoading}
-                  className="w-full rounded-xl border border-rose-400/80 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-rose-500/50 dark:text-rose-200 dark:hover:bg-rose-500/10"
+                  className="w-full rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-[#111111] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-rose-400/40 dark:bg-rose-500/15 dark:text-slate-100 dark:hover:bg-rose-500/20"
                 >
                   {roastLoading ? "Roasting..." : "Roast Me"}
                 </button>
@@ -897,7 +1093,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => void handleStudyPlan()}
                   disabled={studyPlanLoading || activeAssignments.length === 0}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="w-full rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-[#111111] transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-slate-100 dark:hover:bg-emerald-500/20"
                 >
                   {studyPlanLoading ? "Planning..." : "Study Plan"}
                 </button>
@@ -906,8 +1102,8 @@ export default function DashboardPage() {
                   onClick={() => setSurviveToday((prev) => !prev)}
                   className={`w-full rounded-xl border px-4 py-3 text-sm font-semibold transition md:w-auto ${
                     surviveToday
-                      ? "border-amber-500 bg-amber-100 text-amber-800 hover:bg-amber-200 dark:border-amber-500/60 dark:bg-amber-500/20 dark:text-amber-200 dark:hover:bg-amber-500/30"
-                      : "border-amber-400/80 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-200 dark:hover:bg-amber-500/10"
+                      ? "border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-400/40 dark:bg-amber-500/20 dark:text-amber-100 dark:hover:bg-amber-500/25"
+                      : "border-slate-400 bg-white text-[#111111] hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   }`}
                 >
                   Survive Today
@@ -923,21 +1119,21 @@ export default function DashboardPage() {
                     setPriority("Medium");
                     setIsModalOpen(true);
                   }}
-                  className="w-full rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400 md:w-auto"
+                  className="w-full rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 md:w-auto"
                 >
                   + Add Assignment
                 </button>
               </div>
 
               <div className="flex items-center justify-end gap-2">
-                <div className="flex items-center rounded-lg border border-slate-300 p-1 dark:border-slate-700">
+                <div className="flex items-center rounded-lg border border-slate-500 bg-white/85 p-1 dark:border-slate-600 dark:bg-transparent">
                   <button
                     type="button"
                     onClick={() => setViewMode("card")}
                     className={`rounded-md p-1.5 transition ${
                       viewMode === "card"
-                        ? "bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
-                        : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                        ? "bg-slate-300 text-slate-900 dark:bg-slate-800 dark:text-slate-100"
+                        : "text-slate-700 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800"
                     }`}
                     aria-label="Card view"
                     title="Card view"
@@ -949,8 +1145,8 @@ export default function DashboardPage() {
                     onClick={() => setViewMode("list")}
                     className={`rounded-md p-1.5 transition ${
                       viewMode === "list"
-                        ? "bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
-                        : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                        ? "bg-slate-300 text-slate-900 dark:bg-slate-800 dark:text-slate-100"
+                        : "text-slate-700 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800"
                     }`}
                     aria-label="List view"
                     title="List view"
@@ -962,7 +1158,7 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-                    className="rounded-lg border border-slate-300 p-2.5 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                    className="rounded-lg border border-slate-500 bg-white/85 p-2.5 text-slate-800 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-transparent dark:text-slate-300 dark:hover:bg-slate-700"
                     aria-label="Toggle theme"
                     title="Toggle theme"
                   >
@@ -972,11 +1168,25 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    setTempDefaultPriority(defaultPriority);
+                    setTempDefaultView(defaultView);
+                    setTempCompactMode(compactMode);
+                    setIsSettingsOpen(true);
+                  }}
+                  className="rounded-lg border border-slate-500 bg-white/85 p-2.5 text-slate-800 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-transparent dark:text-slate-300 dark:hover:bg-slate-700"
+                  aria-label="Settings"
+                  title="Settings"
+                >
+                  <Settings size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setUploadError(null);
                     setUploadFile(null);
                     setIsUploadModalOpen(true);
                   }}
-                  className="rounded-lg border border-slate-300 p-2.5 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-lg border border-slate-500 bg-white/85 p-2.5 text-slate-800 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-transparent dark:text-slate-300 dark:hover:bg-slate-700"
                   aria-label="Upload syllabus"
                   title="Upload syllabus"
                 >
@@ -988,7 +1198,7 @@ export default function DashboardPage() {
                     await supabase.auth.signOut();
                     router.push("/auth");
                   }}
-                  className="rounded-lg border border-slate-300 p-2.5 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-lg border border-slate-500 bg-white/85 p-2.5 text-slate-800 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-transparent dark:text-slate-300 dark:hover:bg-slate-700"
                   aria-label="Logout"
                   title="Logout"
                 >
@@ -1002,14 +1212,14 @@ export default function DashboardPage() {
                     void handleClearAllAssignments();
                   }}
                   disabled={clearAllLoading || assignments.length === 0}
-                  className="rounded-lg border border-rose-400/80 px-2.5 py-1.5 text-xs text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/60 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                  className="rounded-lg border border-slate-400 bg-white px-2.5 py-1.5 text-xs text-[#1a1a1a] transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-transparent dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
                 >
                   {clearAllLoading ? "Clearing..." : "Clear All"}
                 </button>
               </div>
               {streak > 1 ? (
                 <div className="flex justify-end">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/70 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-400 bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:border-amber-500/50 dark:bg-gradient-to-r dark:from-amber-600/30 dark:to-orange-600/30 dark:text-amber-100">
                     <Flame size={14} />
                     {streak}
                   </span>
@@ -1020,53 +1230,187 @@ export default function DashboardPage() {
         </header>
 
         {deadlineConflict.count > 0 && !dismissConflictBanner ? (
-          <div className="relative rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+          <div className="relative rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 text-amber-900 dark:border-amber-400/35 dark:bg-amber-500/15 dark:text-amber-200">
             <button
               type="button"
               onClick={() => setDismissConflictBanner(true)}
-              className="absolute right-3 top-3 rounded px-2 py-0.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/40"
+              className="absolute right-3 top-3 rounded px-2 py-0.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-200 dark:text-amber-100 dark:hover:bg-amber-500/20"
               aria-label="Dismiss conflict warning"
             >
               ×
             </button>
             <p className="text-sm font-semibold">
-              Heads up — you have {deadlineConflict.count} assignments due within 24 hours of each other
+              Heads up — these groups are due within 24 hours:
             </p>
-            <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
-              {deadlineConflict.titles.join(" • ")}
-            </p>
+            <div className="mt-1 space-y-1 text-sm text-amber-800 dark:text-amber-100">
+              {deadlineConflict.groups.map((groupTitles, index) => (
+                <p key={`${groupTitles.join("-")}-${index}`}>
+                  • {formatConflictTitles(groupTitles)}
+                </p>
+              ))}
+            </div>
           </div>
         ) : null}
 
         {error ? (
-          <p className="rounded-lg border border-rose-300 bg-rose-100 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
+          <p className="rounded-lg border border-rose-300 bg-rose-100 px-4 py-3 text-sm text-rose-800 dark:border-rose-400/35 dark:bg-rose-500/15 dark:text-rose-200">
             {error}
           </p>
         ) : null}
+
+        {/* Sort and Filter Bar */}
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-[#1b202b]">
+          {/* Sort By */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="sort-by" className="text-xs font-medium text-[#555555] dark:text-slate-400">
+              Sort:
+            </label>
+            <select
+              id="sort-by"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "deadline" | "panic" | "course" | "priority")}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-600 dark:bg-[#161a22] dark:text-slate-200"
+            >
+              <option value="deadline">Deadline (soonest)</option>
+              <option value="panic">Panic Score (highest)</option>
+              <option value="course">Course (A-Z)</option>
+              <option value="priority">Priority (highest)</option>
+            </select>
+          </div>
+
+          {/* Filter by Course */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="filter-course" className="text-xs font-medium text-[#555555] dark:text-slate-400">
+              Course:
+            </label>
+            <select
+              id="filter-course"
+              value={filterCourse}
+              onChange={(e) => setFilterCourse(e.target.value)}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-600 dark:bg-[#161a22] dark:text-slate-200"
+            >
+              <option value="all">All Courses</option>
+              {uniqueCourses.map((course) => (
+                <option key={course} value={course}>
+                  {course}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter by Status */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-[#555555] dark:text-slate-400">Status:</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setFilterStatus("all")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  filterStatus === "all"
+                    ? "bg-indigo-500 text-white"
+                    : "bg-white text-[#555555] hover:bg-slate-100 dark:bg-[#161a22] dark:text-slate-400 dark:hover:bg-slate-700"
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("active")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  filterStatus === "active"
+                    ? "bg-indigo-500 text-white"
+                    : "bg-white text-[#555555] hover:bg-slate-100 dark:bg-[#161a22] dark:text-slate-400 dark:hover:bg-slate-700"
+                }`}
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("completed")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  filterStatus === "completed"
+                    ? "bg-indigo-500 text-white"
+                    : "bg-white text-[#555555] hover:bg-slate-100 dark:bg-[#161a22] dark:text-slate-400 dark:hover:bg-slate-700"
+                }`}
+              >
+                Completed
+              </button>
+            </div>
+          </div>
+        </div>
 
         <section className="space-y-8">
           {filteredAssignments.length > 0 && viewMode === "card" && (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {filteredAssignments.map((assignment) => {
+            const priorityLabel = assignment.priority ?? "Medium";
+
+            // Render completed assignments differently
+            if (assignment.completed) {
+              return (
+                <article
+                  key={assignment.id}
+                  className={`rounded-2xl border border-slate-300 bg-slate-100 shadow-sm opacity-65 dark:border-slate-800 dark:bg-[#161a22]/70 ${compactMode ? "space-y-3 p-4" : "space-y-4 p-5"}`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className={`font-semibold text-[#111111] line-through dark:text-white ${compactMode ? "text-lg" : "text-xl"}`}>{assignment.title}</h2>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
+                          priorityLabel
+                        )}`}
+                      >
+                        {priorityLabel}
+                      </span>
+                    </div>
+                    <p className={`text-[#555555] line-through dark:text-slate-400 ${compactMode ? "text-xs" : "text-sm"}`}>{assignment.course}</p>
+                  </div>
+
+                  <div className={`rounded-lg border border-slate-300 bg-slate-50 px-3 dark:border-slate-700 dark:bg-[#1b202b] ${compactMode ? "py-1.5" : "py-2"}`}>
+                    <p className="text-xs uppercase tracking-wide text-[#777777] dark:text-slate-500">Deadline</p>
+                    <p className="mt-1 text-sm text-slate-700 line-through dark:text-slate-300">{new Date(assignment.deadline).toLocaleString()}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleUndoAssignment(assignment.id)}
+                      className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+                    >
+                      Undo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(assignment.id)}
+                      className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-rose-500"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              );
+            }
+
+            // Render active assignments with panic scores and full functionality
             const { label } = formatCountdown(assignment.deadline, nowMs);
             const panicScore = calcPanicScore(
               assignment.deadline,
               assignment.estimated_hours,
               assignment.priority ?? "Medium"
             );
-            const panicColor = getPanicColor(panicScore);
             const panicLabel = getPanicLabel(panicScore);
               const pacingText = getPacingText(assignment.deadline, assignment.estimated_hours, nowMs);
-              const priorityLabel = assignment.priority ?? "Medium";
 
             return (
               <article
                 key={assignment.id}
-                className="space-y-4 rounded-2xl border border-slate-300 bg-white p-5 shadow-xl shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-black/20"
+                className={`rounded-2xl border border-slate-300 bg-white shadow-md shadow-slate-200/35 dark:border-slate-800 dark:bg-[#161a22] dark:shadow-black/25 ${getPanicCardAccentClass(
+                  panicScore
+                )} ${compactMode ? "space-y-3 p-4" : "space-y-4 p-6"}`}
               >
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">{assignment.title}</h2>
+                    <h2 className={`font-semibold text-[#111111] dark:text-white ${compactMode ? "text-lg" : "text-xl"}`}>{assignment.title}</h2>
                     <span
                       className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                         priorityLabel
@@ -1075,23 +1419,24 @@ export default function DashboardPage() {
                       {priorityLabel}
                     </span>
                   </div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">{assignment.course}</p>
+                  <p className={`text-[#555555] dark:text-slate-400 ${compactMode ? "text-xs" : "text-sm"}`}>{assignment.course}</p>
                 </div>
 
-                <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70">
-                  <p className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-500">Countdown</p>
-                  <p className="mt-1 text-lg font-bold text-cyan-600 dark:text-cyan-300">{label}</p>
+                <div className={`rounded-lg border border-slate-300 bg-slate-50 px-3 dark:border-slate-700 dark:bg-[#1b202b] ${compactMode ? "py-1.5" : "py-2"}`}>
+                  <p className="text-xs uppercase tracking-wide text-[#777777] dark:text-slate-500">Countdown</p>
+                  <p className={`mt-1 font-semibold text-indigo-600 dark:text-indigo-300 ${compactMode ? "text-base" : "text-lg"}`}>{label}</p>
                 </div>
 
                 <div
-                  className="inline-flex items-center rounded-full border px-3 py-1 text-sm font-bold"
-                  style={{ color: panicColor, borderColor: panicColor }}
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${getPanicBadgeClass(
+                    panicScore
+                  )}`}
                 >
                   {panicLabel} · {panicScore}
                 </div>
 
                 {pacingText ? (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{pacingText}</p>
+                  <p className="text-xs text-[#555555] dark:text-slate-400">{pacingText}</p>
                 ) : null}
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -1100,7 +1445,7 @@ export default function DashboardPage() {
                       type="button"
                       onClick={() => void startUpgradeCheckout()}
                       disabled={upgradeLoading}
-                      className="rounded-lg bg-indigo-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                      className="rounded-lg bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {upgradeLoading ? "Redirecting..." : "Upgrade"}
                     </button>
@@ -1109,7 +1454,7 @@ export default function DashboardPage() {
                       type="button"
                       onClick={() => handleVibe(assignment)}
                       disabled={vibeLoading[assignment.id]}
-                      className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-cyan-500 dark:text-slate-950 dark:hover:bg-cyan-400"
+                      className="rounded-lg bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
                     </button>
@@ -1117,28 +1462,28 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={() => handleEditAssignment(assignment)}
-                    className="rounded-lg border border-blue-500 px-3 py-2 text-sm text-blue-600 transition hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                    className="rounded-lg bg-slate-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500"
                   >
                     Edit
                   </button>
                   <button
                     type="button"
                     onClick={() => handleCompleteAssignment(assignment.id)}
-                    className="rounded-lg border border-emerald-500 px-3 py-2 text-sm text-emerald-600 transition hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                    className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
                   >
                     Done
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDelete(assignment.id)}
-                    className="rounded-lg border border-rose-500 px-3 py-2 text-sm text-rose-600 transition hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                    className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-rose-500"
                   >
                     Delete
                   </button>
                 </div>
 
                 {vibes[assignment.id] ? (
-                  <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-200">
+                  <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-[#1a1a1a] dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-200">
                     <span>{vibes[assignment.id]}</span>
                     <button
                       type="button"
@@ -1158,7 +1503,7 @@ export default function DashboardPage() {
                 ) : null}
 
                 {diagnoseLimitReached[assignment.id] ? (
-                  <p className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+                  <p className="rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-sm text-amber-900 dark:border-amber-400/35 dark:bg-amber-500/15 dark:text-amber-200">
                     Daily limit reached — upgrade for unlimited
                   </p>
                 ) : null}
@@ -1172,26 +1517,75 @@ export default function DashboardPage() {
           {filteredAssignments.length > 0 && viewMode === "list" && (
             <div className="space-y-3">
               {filteredAssignments.map((assignment) => {
+                const priorityLabel = assignment.priority ?? "Medium";
+
+                // Render completed assignments differently
+                if (assignment.completed) {
+                  return (
+                    <div
+                      key={assignment.id}
+                      className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 shadow-sm opacity-70 dark:border-slate-800 dark:bg-[#161a22]/70"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h2 className="text-base font-semibold text-[#111111] line-through dark:text-white">{assignment.title}</h2>
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
+                                  priorityLabel
+                                )}`}
+                              >
+                                {priorityLabel}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#555555] line-through dark:text-slate-400">{assignment.course}</p>
+                          </div>
+                          <div className="text-sm text-slate-700 line-through dark:text-slate-300">{new Date(assignment.deadline).toLocaleString()}</div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleUndoAssignment(assignment.id)}
+                            className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-900 transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+                          >
+                            Undo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(assignment.id)}
+                            className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-500"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Render active assignments with panic scores and full functionality
                 const { label } = formatCountdown(assignment.deadline, nowMs);
                 const panicScore = calcPanicScore(
                   assignment.deadline,
                   assignment.estimated_hours,
                   assignment.priority ?? "Medium"
                 );
-                const panicColor = getPanicColor(panicScore);
                 const panicLabel = getPanicLabel(panicScore);
-                const priorityLabel = assignment.priority ?? "Medium";
 
                 return (
                   <div
                     key={assignment.id}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 shadow-lg shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-black/20"
+                    className={`rounded-2xl border border-slate-300 bg-white px-4 py-3 shadow-sm shadow-slate-200/25 dark:border-slate-800 dark:bg-[#161a22] dark:shadow-black/20 ${getPanicCardAccentClass(
+                      panicScore
+                    )}`}
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-base font-semibold text-slate-900 dark:text-white">{assignment.title}</h2>
+                            <h2 className="text-base font-semibold text-[#111111] dark:text-white">{assignment.title}</h2>
                             <span
                               className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                                 priorityLabel
@@ -1200,12 +1594,13 @@ export default function DashboardPage() {
                               {priorityLabel}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{assignment.course}</p>
+                          <p className="text-xs text-[#555555] dark:text-slate-400">{assignment.course}</p>
                         </div>
-                        <div className="text-sm font-semibold text-cyan-600 dark:text-cyan-300">{label}</div>
+                        <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{label}</div>
                         <div
-                          className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold"
-                          style={{ color: panicColor, borderColor: panicColor }}
+                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${getPanicBadgeClass(
+                            panicScore
+                          )}`}
                         >
                           {panicLabel} · {panicScore}
                         </div>
@@ -1217,7 +1612,7 @@ export default function DashboardPage() {
                             type="button"
                             onClick={() => void startUpgradeCheckout()}
                             disabled={upgradeLoading}
-                            className="rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                            className="rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {upgradeLoading ? "Redirecting..." : "Upgrade"}
                           </button>
@@ -1226,7 +1621,7 @@ export default function DashboardPage() {
                             type="button"
                             onClick={() => handleVibe(assignment)}
                             disabled={vibeLoading[assignment.id]}
-                            className="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-cyan-500 dark:text-slate-950 dark:hover:bg-cyan-400"
+                            className="rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
                           </button>
@@ -1234,21 +1629,21 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           onClick={() => handleEditAssignment(assignment)}
-                          className="rounded-lg border border-blue-500 px-3 py-1.5 text-xs text-blue-600 transition hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                          className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => handleCompleteAssignment(assignment.id)}
-                          className="rounded-lg border border-emerald-500 px-3 py-1.5 text-xs text-emerald-600 transition hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-500"
                         >
                           Done
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(assignment.id)}
-                          className="rounded-lg border border-rose-500 px-3 py-1.5 text-xs text-rose-600 transition hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                          className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-500"
                         >
                           Delete
                         </button>
@@ -1261,14 +1656,14 @@ export default function DashboardPage() {
           )}
 
           {surviveToday && filteredAssignments.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-6 text-center text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
-              Nothing due in the next 48 hours. Go touch grass.
+            <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-100 p-6 text-center text-sm text-amber-900 dark:border-amber-400/35 dark:bg-amber-500/15 dark:text-amber-200">
+              Nothing due in the next 48 hours. Go outside.
             </div>
           ) : null}
 
-          {assignments.filter((a) => a.completed).length > 0 && viewMode === "card" && (
+          {assignments.filter((a) => a.completed).length > 0 && viewMode === "card" && filterStatus === "active" && (
             <div>
-              <h3 className="mb-4 text-lg font-semibold text-slate-600 dark:text-slate-400">Completed</h3>
+              <h3 className="mb-4 text-lg font-semibold text-[#4a4a4a] dark:text-slate-400">Completed</h3>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {assignments
                   .filter((a) => a.completed)
@@ -1277,11 +1672,11 @@ export default function DashboardPage() {
                     return (
                       <article
                         key={assignment.id}
-                        className="space-y-4 rounded-2xl border border-slate-300 bg-slate-100 p-5 shadow-xl shadow-slate-200/30 opacity-60 dark:border-slate-800 dark:bg-slate-900/30 dark:shadow-black/20"
+                        className={`rounded-2xl border border-slate-300 bg-slate-100 shadow-sm opacity-65 dark:border-slate-800 dark:bg-[#161a22]/70 ${compactMode ? "space-y-3 p-4" : "space-y-4 p-5"}`}
                       >
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-xl font-bold text-slate-900 line-through dark:text-white">{assignment.title}</h2>
+                            <h2 className={`font-semibold text-[#111111] line-through dark:text-white ${compactMode ? "text-lg" : "text-xl"}`}>{assignment.title}</h2>
                             <span
                               className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                                 priorityLabel
@@ -1290,11 +1685,11 @@ export default function DashboardPage() {
                               {priorityLabel}
                             </span>
                           </div>
-                          <p className="text-sm text-slate-600 line-through dark:text-slate-400">{assignment.course}</p>
+                          <p className={`text-[#555555] line-through dark:text-slate-400 ${compactMode ? "text-xs" : "text-sm"}`}>{assignment.course}</p>
                         </div>
 
-                        <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70">
-                          <p className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-500">Deadline</p>
+                        <div className={`rounded-lg border border-slate-300 bg-slate-50 px-3 dark:border-slate-700 dark:bg-[#1b202b] ${compactMode ? "py-1.5" : "py-2"}`}>
+                          <p className="text-xs uppercase tracking-wide text-[#777777] dark:text-slate-500">Deadline</p>
                           <p className="mt-1 text-sm text-slate-700 line-through dark:text-slate-300">{new Date(assignment.deadline).toLocaleString()}</p>
                         </div>
 
@@ -1302,14 +1697,14 @@ export default function DashboardPage() {
                           <button
                             type="button"
                             onClick={() => handleUndoAssignment(assignment.id)}
-                            className="rounded-lg border border-amber-500 px-3 py-2 text-sm text-amber-600 transition hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                            className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
                           >
                             Undo
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(assignment.id)}
-                            className="rounded-lg border border-rose-500 px-3 py-2 text-sm text-rose-600 transition hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                            className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-rose-500"
                           >
                             Delete
                           </button>
@@ -1321,9 +1716,9 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {assignments.filter((a) => a.completed).length > 0 && viewMode === "list" && (
+          {assignments.filter((a) => a.completed).length > 0 && viewMode === "list" && filterStatus === "active" && (
             <div>
-              <h3 className="mb-4 text-lg font-semibold text-slate-600 dark:text-slate-400">Completed</h3>
+              <h3 className="mb-4 text-lg font-semibold text-[#4a4a4a] dark:text-slate-400">Completed</h3>
               <div className="space-y-3">
                 {assignments
                   .filter((a) => a.completed)
@@ -1334,13 +1729,13 @@ export default function DashboardPage() {
                     return (
                       <div
                         key={assignment.id}
-                        className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 shadow-lg shadow-slate-200/30 opacity-70 dark:border-slate-800 dark:bg-slate-900/30 dark:shadow-black/20"
+                        className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 shadow-sm opacity-70 dark:border-slate-800 dark:bg-[#161a22]/70"
                       >
                         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                           <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
                             <div>
                               <div className="flex flex-wrap items-center gap-2">
-                                <h2 className="text-base font-semibold text-slate-900 line-through dark:text-white">{assignment.title}</h2>
+                                <h2 className="text-base font-semibold text-[#111111] line-through dark:text-white">{assignment.title}</h2>
                                 <span
                                   className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                                     priorityLabel
@@ -1349,23 +1744,23 @@ export default function DashboardPage() {
                                   {priorityLabel}
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-500 line-through dark:text-slate-400">{assignment.course}</p>
+                              <p className="text-xs text-[#555555] line-through dark:text-slate-400">{assignment.course}</p>
                             </div>
-                            <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</div>
+                            <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{label}</div>
                           </div>
 
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
                               onClick={() => handleUndoAssignment(assignment.id)}
-                              className="rounded-lg border border-amber-500 px-3 py-1.5 text-xs text-amber-600 transition hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-900 transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
                             >
                               Undo
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDelete(assignment.id)}
-                              className="rounded-lg border border-rose-500 px-3 py-1.5 text-xs text-rose-600 transition hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                              className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rose-500"
                             >
                               Delete
                             </button>
@@ -1380,20 +1775,20 @@ export default function DashboardPage() {
         </section>
 
         {assignments.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-400 bg-slate-100 p-8 text-center text-slate-600 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-400">
+          <div className="rounded-2xl border border-dashed border-slate-400 bg-slate-100 p-8 text-center text-[#4a4a4a] dark:border-slate-700 dark:bg-[#161a22] dark:text-slate-400">
             No assignments yet. Add your first deadline.
           </div>
         ) : null}
       </div>
 
       {isModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
-          <div className="w-full max-w-md rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
-            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">{editingId ? "Edit Assignment" : "New Assignment"}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 dark:bg-slate-950/65">
+          <div className="w-full max-w-md rounded-2xl border border-slate-300 bg-white p-6 shadow-xl shadow-slate-200/35 dark:border-slate-700/70 dark:bg-[#161a22] dark:shadow-black/35">
+            <h2 className="mb-4 text-xl font-semibold text-[#111111] dark:text-white">{editingId ? "Edit Assignment" : "New Assignment"}</h2>
 
             <form onSubmit={handleAddAssignment} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="title" className="text-sm text-slate-700 dark:text-slate-300">
+                <label htmlFor="title" className="text-sm text-[#4a4a4a] dark:text-slate-300">
                   Title
                 </label>
                 <input
@@ -1402,12 +1797,12 @@ export default function DashboardPage() {
                   required
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="course" className="text-sm text-slate-700 dark:text-slate-300">
+                <label htmlFor="course" className="text-sm text-[#4a4a4a] dark:text-slate-300">
                   Course
                 </label>
                 <input
@@ -1416,12 +1811,12 @@ export default function DashboardPage() {
                   required
                   value={course}
                   onChange={(event) => setCourse(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="deadline" className="text-sm text-slate-700 dark:text-slate-300">
+                <label htmlFor="deadline" className="text-sm text-[#4a4a4a] dark:text-slate-300">
                   Deadline
                 </label>
                 <input
@@ -1430,12 +1825,12 @@ export default function DashboardPage() {
                   required
                   value={deadline}
                   onChange={(event) => setDeadline(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="estimatedHours" className="text-sm text-slate-700 dark:text-slate-300">
+                <label htmlFor="estimatedHours" className="text-sm text-[#4a4a4a] dark:text-slate-300">
                   Estimated Hours
                 </label>
                 <input
@@ -1446,19 +1841,19 @@ export default function DashboardPage() {
                   required
                   value={estimatedHours}
                   onChange={(event) => setEstimatedHours(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="priority" className="text-sm text-slate-700 dark:text-slate-300">
+                <label htmlFor="priority" className="text-sm text-[#4a4a4a] dark:text-slate-300">
                   Priority
                 </label>
                 <select
                   id="priority"
                   value={priority}
                   onChange={(event) => setPriority(event.target.value as "Low" | "Medium" | "High")}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 >
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
@@ -1470,14 +1865,14 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-lg bg-slate-200 px-4 py-2 text-[#1a1a1a] transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                  className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? "Saving..." : "Save"}
                 </button>
@@ -1488,25 +1883,25 @@ export default function DashboardPage() {
       ) : null}
 
       {isUploadModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
-          <div className="w-full max-w-md rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
-            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Upload Syllabus</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 dark:bg-slate-950/65">
+          <div className="w-full max-w-md rounded-2xl border border-slate-300 bg-white p-6 shadow-xl shadow-slate-200/35 dark:border-slate-700/70 dark:bg-[#161a22] dark:shadow-black/35">
+            <h2 className="mb-4 text-xl font-semibold text-[#111111] dark:text-white">Upload Syllabus</h2>
 
             <form onSubmit={handleUploadSyllabus} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="syllabus" className="text-sm text-slate-700 dark:text-slate-300">
+                <label htmlFor="syllabus" className="text-sm text-[#4a4a4a] dark:text-slate-300">
                   Syllabus file
                 </label>
                 <input
                   id="syllabus"
                   type="file"
                   onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
               {uploadError ? (
-                <p className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
+                <p className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-2 text-sm text-rose-800 dark:border-rose-400/35 dark:bg-rose-500/15 dark:text-rose-200">
                   {uploadError}
                 </p>
               ) : null}
@@ -1515,14 +1910,14 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => setIsUploadModalOpen(false)}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-lg bg-slate-200 px-4 py-2 text-[#1a1a1a] transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={uploadLoading}
-                  className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                  className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {uploadLoading ? "Processing..." : "Upload"}
                 </button>
@@ -1533,9 +1928,9 @@ export default function DashboardPage() {
       ) : null}
 
       {isAssignmentLimitModalOpen && FREEMIUM_ENABLED ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
-          <div className="w-full max-w-md rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
-            <p className="text-base text-slate-900 dark:text-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 dark:bg-slate-950/65">
+          <div className="w-full max-w-md rounded-2xl border border-slate-300 bg-white p-6 shadow-xl shadow-slate-200/35 dark:border-slate-700/70 dark:bg-[#161a22] dark:shadow-black/35">
+            <p className="text-base text-[#1a1a1a] dark:text-slate-100">
               Free plan is limited to 5 assignments. Upgrade to Premium for $2.99/month for unlimited.
             </p>
 
@@ -1543,7 +1938,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setIsAssignmentLimitModalOpen(false)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="rounded-lg bg-slate-200 px-4 py-2 text-[#1a1a1a] transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
               >
                 Cancel
               </button>
@@ -1551,7 +1946,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => void startUpgradeCheckout()}
                 disabled={upgradeLoading}
-                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {upgradeLoading ? "Redirecting..." : "Upgrade"}
               </button>
@@ -1561,31 +1956,69 @@ export default function DashboardPage() {
       ) : null}
 
       {isStudyPlanOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
-          <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
-            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">7-Day Study Plan</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 dark:bg-slate-950/65">
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-300 bg-white p-6 shadow-xl shadow-slate-200/35 dark:border-slate-700/70 dark:bg-[#161a22] dark:shadow-black/35">
+            {/* Header */}
+            <div className="mb-6 flex items-center gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
+              <div className="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-500/20">
+                <Calendar className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <h2 className="text-2xl font-semibold text-[#111111] dark:text-white">7-Day Study Plan</h2>
+            </div>
 
             {studyPlanLoading ? (
-              <p className="text-sm text-slate-600 dark:text-slate-300">Generating your plan...</p>
+              <p className="text-sm text-[#4a4a4a] dark:text-slate-300">Generating your plan...</p>
             ) : studyPlanError ? (
-              <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+              <p className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-2 text-sm text-rose-800 dark:border-rose-400/35 dark:bg-rose-500/15 dark:text-rose-200">
                 {studyPlanError}
               </p>
-            ) : studyPlanLines.length > 0 ? (
-              <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700 dark:text-slate-200">
-                {studyPlanLines.map((line, index) => (
-                  <li key={`${line}-${index}`}>{line}</li>
+            ) : parsedStudyPlan.length > 0 ? (
+              <div className="space-y-4">
+                {parsedStudyPlan.map((day, index) => (
+                  <div key={day.name}>
+                    <div className={`rounded-xl border p-4 ${day.borderColor} ${day.bgColor}`}>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                        {/* Day Label */}
+                        <div className="flex-shrink-0 sm:w-32">
+                          <span className={`text-sm font-bold uppercase tracking-wide ${day.textColor}`}>
+                            {day.name}
+                          </span>
+                        </div>
+                        
+                        {/* Tasks */}
+                        <div className="flex-1">
+                          {day.tasks.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {day.tasks.map((task, taskIndex) => (
+                                <span
+                                  key={`${day.name}-${taskIndex}`}
+                                  className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-[#1a1a1a] dark:border-slate-600 dark:bg-[#1b202b] dark:text-slate-200"
+                                >
+                                  {task}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-[#777777] dark:text-slate-500">Rest day 🎉</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {index < parsedStudyPlan.length - 1 && (
+                      <div className="my-3 border-t border-slate-200 dark:border-slate-700/50" />
+                    )}
+                  </div>
                 ))}
-              </ul>
+              </div>
             ) : (
-              <p className="text-sm text-slate-600 dark:text-slate-300">No study plan available yet.</p>
+              <p className="text-sm text-[#4a4a4a] dark:text-slate-300">No study plan available yet.</p>
             )}
 
-            <div className="mt-5 flex items-center justify-end">
+            <div className="mt-6 border-t border-slate-200 pt-4 dark:border-slate-700">
               <button
                 type="button"
                 onClick={() => setIsStudyPlanOpen(false)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="w-full rounded-lg bg-slate-200 px-4 py-2.5 text-sm font-medium text-[#1a1a1a] transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
               >
                 Close
               </button>
@@ -1595,23 +2028,23 @@ export default function DashboardPage() {
       ) : null}
 
       {isRoastOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
-          <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
-            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Roast Me</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 dark:bg-slate-950/65">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-xl shadow-slate-200/35 dark:border-slate-700/70 dark:bg-[#161a22] dark:shadow-black/35">
+            <h2 className="mb-4 text-xl font-semibold text-[#111111] dark:text-white">Roast Me</h2>
 
             {roastLoading ? (
-              <p className="text-sm text-slate-600 dark:text-slate-300">Generating roast...</p>
+              <p className="text-sm text-[#4a4a4a] dark:text-slate-300">Generating roast...</p>
             ) : roast ? (
-              <p className="text-sm text-slate-700 dark:text-slate-200">{roast}</p>
+              <p className="text-sm text-[#1a1a1a] dark:text-slate-200">{roast}</p>
             ) : (
-              <p className="text-sm text-slate-600 dark:text-slate-300">No roast available yet.</p>
+              <p className="text-sm text-[#4a4a4a] dark:text-slate-300">No roast available yet.</p>
             )}
 
             <div className="mt-5 flex items-center justify-end">
               <button
                 type="button"
                 onClick={() => setIsRoastOpen(false)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="rounded-lg bg-slate-200 px-4 py-2 text-[#1a1a1a] transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
               >
                 Close
               </button>
@@ -1621,23 +2054,23 @@ export default function DashboardPage() {
       ) : null}
 
       {isDraftModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-slate-950/80">
-          <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl shadow-slate-300/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/40">
-            <h2 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Extension Email Draft</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 dark:bg-slate-950/65">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white p-6 shadow-xl shadow-slate-200/35 dark:border-slate-700/70 dark:bg-[#161a22] dark:shadow-black/35">
+            <h2 className="mb-4 text-xl font-semibold text-[#111111] dark:text-white">Extension Email Draft</h2>
 
             {activeAssignments.length === 0 ? (
-              <p className="text-sm text-slate-600 dark:text-slate-300">No active assignments to draft.</p>
+              <p className="text-sm text-[#4a4a4a] dark:text-slate-300">No active assignments to draft.</p>
             ) : (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label htmlFor="draftAssignment" className="text-sm text-slate-700 dark:text-slate-300">
+                  <label htmlFor="draftAssignment" className="text-sm text-[#4a4a4a] dark:text-slate-300">
                     Assignment
                   </label>
                   <select
                     id="draftAssignment"
                     value={draftAssignmentId}
                     onChange={(event) => setDraftAssignmentId(event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-indigo-500/30 transition focus:ring dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:ring-indigo-500/50"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                   >
                     {activeAssignments.map((assignment) => (
                       <option key={assignment.id} value={assignment.id}>
@@ -1651,7 +2084,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => void handleGenerateDraft()}
                   disabled={draftLoading}
-                  className="w-full rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                  className="w-full rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {draftLoading ? "Generating..." : "Generate"}
                 </button>
@@ -1659,7 +2092,7 @@ export default function DashboardPage() {
             )}
 
             {draftSubject && draftBody ? (
-              <div className="mt-4 space-y-3 rounded-lg border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200">
+              <div className="mt-4 space-y-3 rounded-lg border border-slate-300 bg-slate-100 p-4 text-sm text-[#1a1a1a] dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-200">
                 <p>
                   <span className="font-semibold">Subject:</span> {draftSubject}
                 </p>
@@ -1669,12 +2102,12 @@ export default function DashboardPage() {
 
             <div className="mt-5 flex items-center justify-end gap-2">
               {copySuccess ? (
-                <p className="mr-auto text-xs text-emerald-600 dark:text-emerald-300">Copied to clipboard</p>
+                <p className="mr-auto text-xs text-emerald-700 dark:text-emerald-200">Copied to clipboard</p>
               ) : null}
               <button
                 type="button"
                 onClick={() => setIsDraftModalOpen(false)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="rounded-lg bg-slate-200 px-4 py-2 text-[#1a1a1a] transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
               >
                 Close
               </button>
@@ -1682,9 +2115,163 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => void handleCopyDraft()}
                 disabled={!draftSubject || !draftBody}
-                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400"
+                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Copy
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Settings Modal */}
+      {isSettingsOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl dark:border-slate-700/70 dark:bg-[#161a22]">
+            <h2 className="text-2xl font-semibold text-[#111111] dark:text-white">Settings</h2>
+
+            {/* Appearance Section */}
+            <div className="mt-6">
+              <h3 className="text-base font-semibold text-[#1a1a1a] dark:text-slate-100">Appearance</h3>
+              <p className="mt-1 text-sm text-[#555555] dark:text-slate-400">Choose your preferred theme</p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTheme("light")}
+                  className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                    theme === "light"
+                      ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/20 dark:text-indigo-300"
+                      : "border-slate-300 bg-white text-[#1a1a1a] hover:bg-slate-50 dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-300 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  <Sun size={16} className="mx-auto" />
+                  <span className="mt-1 block">Light</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTheme("dark")}
+                  className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                    theme === "dark"
+                      ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/20 dark:text-indigo-300"
+                      : "border-slate-300 bg-white text-[#1a1a1a] hover:bg-slate-50 dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-300 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  <Moon size={16} className="mx-auto" />
+                  <span className="mt-1 block">Dark</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTheme("system")}
+                  className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                    theme === "system"
+                      ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/20 dark:text-indigo-300"
+                      : "border-slate-300 bg-white text-[#1a1a1a] hover:bg-slate-50 dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-300 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  <Settings size={16} className="mx-auto" />
+                  <span className="mt-1 block">System</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Task Defaults Section */}
+            <div className="mt-6 border-t border-slate-200 pt-6 dark:border-slate-700">
+              <h3 className="text-base font-semibold text-[#1a1a1a] dark:text-slate-100">Task Defaults</h3>
+              <p className="mt-1 text-sm text-[#555555] dark:text-slate-400">Set default values for new assignments</p>
+              
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label htmlFor="default-priority" className="block text-sm font-medium text-[#1a1a1a] dark:text-slate-200">
+                    Default Priority
+                  </label>
+                  <select
+                    id="default-priority"
+                    value={tempDefaultPriority}
+                    onChange={(e) => setTempDefaultPriority(e.target.value as "Low" | "Medium" | "High")}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="default-view" className="block text-sm font-medium text-[#1a1a1a] dark:text-slate-200">
+                    Default View
+                  </label>
+                  <select
+                    id="default-view"
+                    value={tempDefaultView}
+                    onChange={(e) => setTempDefaultView(e.target.value as "card" | "list")}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                  >
+                    <option value="card">Card View</option>
+                    <option value="list">List View</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Preferences Section */}
+            <div className="mt-6 border-t border-slate-200 pt-6 dark:border-slate-700">
+              <h3 className="text-base font-semibold text-[#1a1a1a] dark:text-slate-100">Preferences</h3>
+              <p className="mt-1 text-sm text-[#555555] dark:text-slate-400">Customize your dashboard experience</p>
+              
+              <div className="mt-4">
+                <label className="flex items-center justify-between">
+                  <div>
+                    <span className="block text-sm font-medium text-[#1a1a1a] dark:text-slate-200">Compact Mode</span>
+                    <span className="mt-0.5 block text-xs text-[#555555] dark:text-slate-400">Make assignment cards smaller and tighter</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTempCompactMode(!tempCompactMode)}
+                    className={`relative ml-4 h-6 w-11 flex-shrink-0 rounded-full transition ${
+                      tempCompactMode ? "bg-indigo-500" : "bg-slate-300 dark:bg-slate-600"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${
+                        tempCompactMode ? "left-5" : "left-0.5"
+                      }`}
+                    />
+                  </button>
+                </label>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="mt-8 flex items-center justify-end gap-3 border-t border-slate-200 pt-6 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setTempDefaultPriority(defaultPriority);
+                  setTempDefaultView(defaultView);
+                  setTempCompactMode(compactMode);
+                  setIsSettingsOpen(false);
+                }}
+                className="rounded-lg bg-slate-200 px-5 py-2 text-sm font-medium text-[#1a1a1a] transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDefaultPriority(tempDefaultPriority);
+                  setDefaultView(tempDefaultView);
+                  setCompactMode(tempCompactMode);
+                  setViewMode(tempDefaultView);
+                  
+                  window.localStorage.setItem("duesense:defaultPriority", tempDefaultPriority);
+                  window.localStorage.setItem("duesense:defaultView", tempDefaultView);
+                  window.localStorage.setItem("duesense:compactMode", String(tempCompactMode));
+                  
+                  setIsSettingsOpen(false);
+                }}
+                className="rounded-lg bg-indigo-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400"
+              >
+                Save Changes
               </button>
             </div>
           </div>
