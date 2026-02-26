@@ -14,7 +14,7 @@ Built as a full-stack SaaS web app.
 
 **Dashboard — Card View**
 
-<img width="1919" height="987" alt="image" src="https://github.com/user-attachments/assets/0ba586b7-fd1b-4701-a748-993393adf358" />
+<img width="1919" height="986" alt="image" src="https://github.com/user-attachments/assets/5f088c00-2036-42af-a17c-11b98058fb11" />
 
 *Assignment cards with live countdowns, panic scores, and AI diagnosis*
 
