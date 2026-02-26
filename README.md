@@ -20,13 +20,13 @@ Built as a full-stack SaaS web app.
 
 **Dashboard — List View**
 
-<img width="1919" height="987" alt="image" src="https://github.com/user-attachments/assets/3166b814-8e4b-4eb0-bc9c-50b132ea97ec" />
+<img width="1919" height="988" alt="image" src="https://github.com/user-attachments/assets/d5ecc481-b4ab-4143-a0c3-086ae97a760b" />
 
 *Compact list view for when assignments pile up*
 
 **Syllabus Upload**
 
-<img width="557" height="274" alt="image" src="https://github.com/user-attachments/assets/3e1f6c4a-d302-46b6-b5e8-d7ce74e2ad84" />
+<img width="558" height="267" alt="image" src="https://github.com/user-attachments/assets/c4ed5509-ee62-44f2-8784-21c5165b99fd" />
 
 *Drop in a PDF and watch it auto-populate all your assignments*
 
