@@ -2,11 +2,137 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root,
+html[data-theme="default"] {
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-text: #4338ca;
+  --accent-text-dark: #a5b4fc;
+  --accent-ring: rgba(99, 102, 241, 0.35);
+  --accent-soft-border: rgba(99, 102, 241, 0.35);
+  --accent-soft-border-dark: rgba(129, 140, 248, 0.45);
+  --accent-soft-bg: rgba(99, 102, 241, 0.12);
+  --accent-soft-bg-hover: rgba(99, 102, 241, 0.18);
+  --accent-soft-bg-dark: rgba(99, 102, 241, 0.18);
+  --accent-soft-bg-dark-hover: rgba(99, 102, 241, 0.24);
+  --accent-shadow: rgba(99, 102, 241, 0.3);
+  --button-bg: var(--accent);
+  --button-hover: var(--accent-hover);
+  --button-text: #ffffff;
+  --button-border: transparent;
+  --theme-dark-bg: #111318;
+  --theme-dark-surface: #161a22;
+  --theme-dark-surface-alt: #1b202b;
+  --theme-dark-border: rgb(30 41 59 / 1);
+  --badge-saturation: 1;
+  --header-overlay-light: linear-gradient(120deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.1) 45%, rgba(244, 63, 94, 0.08) 100%);
+  --header-overlay-dark: linear-gradient(120deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.18) 45%, rgba(244, 63, 94, 0.14) 100%);
+  --header-radial-light: radial-gradient(circle at top right, rgba(99, 102, 241, 0.14), transparent 55%);
+  --header-radial-dark: radial-gradient(circle at top right, rgba(129, 140, 248, 0.24), transparent 55%);
+  --header-title-gradient-light: linear-gradient(to right, #4f46e5, #7c3aed, #f43f5e);
+  --header-title-gradient-dark: linear-gradient(to right, #a5b4fc, #c4b5fd, #fda4af);
+}
+
+html[data-theme="green"] {
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-text: #047857;
+  --accent-text-dark: #6ee7b7;
+  --accent-ring: rgba(16, 185, 129, 0.35);
+  --accent-soft-border: rgba(16, 185, 129, 0.35);
+  --accent-soft-border-dark: rgba(16, 185, 129, 0.45);
+  --accent-soft-bg: rgba(16, 185, 129, 0.12);
+  --accent-soft-bg-hover: rgba(16, 185, 129, 0.18);
+  --accent-soft-bg-dark: rgba(16, 185, 129, 0.18);
+  --accent-soft-bg-dark-hover: rgba(16, 185, 129, 0.24);
+  --accent-shadow: rgba(16, 185, 129, 0.3);
+  --button-bg: var(--accent);
+  --button-hover: var(--accent-hover);
+  --button-text: #ffffff;
+  --button-border: transparent;
+  --theme-dark-bg: #0d1714;
+  --theme-dark-surface: #13211d;
+  --theme-dark-surface-alt: #182925;
+  --theme-dark-border: rgb(15 118 110 / 0.6);
+  --badge-saturation: 1;
+  --header-overlay-light: linear-gradient(120deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.1) 45%, rgba(4, 120, 87, 0.08) 100%);
+  --header-overlay-dark: linear-gradient(120deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.18) 45%, rgba(4, 120, 87, 0.14) 100%);
+  --header-radial-light: radial-gradient(circle at top right, rgba(16, 185, 129, 0.16), transparent 55%);
+  --header-radial-dark: radial-gradient(circle at top right, rgba(52, 211, 153, 0.26), transparent 55%);
+  --header-title-gradient-light: linear-gradient(to right, #059669, #10b981, #22d3ee);
+  --header-title-gradient-dark: linear-gradient(to right, #6ee7b7, #99f6e4, #67e8f9);
+}
+
+html[data-theme="sunset"] {
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-text: #b45309;
+  --accent-text-dark: #fcd34d;
+  --accent-ring: rgba(245, 158, 11, 0.35);
+  --accent-soft-border: rgba(245, 158, 11, 0.35);
+  --accent-soft-border-dark: rgba(245, 158, 11, 0.45);
+  --accent-soft-bg: rgba(245, 158, 11, 0.13);
+  --accent-soft-bg-hover: rgba(245, 158, 11, 0.2);
+  --accent-soft-bg-dark: rgba(245, 158, 11, 0.2);
+  --accent-soft-bg-dark-hover: rgba(245, 158, 11, 0.26);
+  --accent-shadow: rgba(245, 158, 11, 0.32);
+  --button-bg: var(--accent);
+  --button-hover: var(--accent-hover);
+  --button-text: #ffffff;
+  --button-border: transparent;
+  --theme-dark-bg: #1a1410;
+  --theme-dark-surface: #241c16;
+  --theme-dark-surface-alt: #2d231b;
+  --theme-dark-border: rgb(146 64 14 / 0.6);
+  --badge-saturation: 1;
+  --header-overlay-light: linear-gradient(120deg, rgba(245, 158, 11, 0.15) 0%, rgba(249, 115, 22, 0.12) 45%, rgba(239, 68, 68, 0.08) 100%);
+  --header-overlay-dark: linear-gradient(120deg, rgba(245, 158, 11, 0.22) 0%, rgba(217, 119, 6, 0.2) 45%, rgba(239, 68, 68, 0.14) 100%);
+  --header-radial-light: radial-gradient(circle at top right, rgba(245, 158, 11, 0.18), transparent 55%);
+  --header-radial-dark: radial-gradient(circle at top right, rgba(251, 191, 36, 0.26), transparent 55%);
+  --header-title-gradient-light: linear-gradient(to right, #d97706, #f59e0b, #ef4444);
+  --header-title-gradient-dark: linear-gradient(to right, #fcd34d, #fdba74, #fca5a5);
+}
+
+html[data-theme="midnight"] {
+  --accent: #e2e8f0;
+  --accent-hover: #cbd5e1;
+  --accent-text: #e2e8f0;
+  --accent-text-dark: #e2e8f0;
+  --accent-ring: rgba(226, 232, 240, 0.35);
+  --accent-soft-border: rgba(226, 232, 240, 0.34);
+  --accent-soft-border-dark: rgba(226, 232, 240, 0.46);
+  --accent-soft-bg: rgba(148, 163, 184, 0.16);
+  --accent-soft-bg-hover: rgba(148, 163, 184, 0.24);
+  --accent-soft-bg-dark: rgba(148, 163, 184, 0.2);
+  --accent-soft-bg-dark-hover: rgba(148, 163, 184, 0.28);
+  --accent-shadow: rgba(226, 232, 240, 0.2);
+  --button-bg: #0f1012;
+  --button-hover: #1a1c20;
+  --button-text: #e2e8f0;
+  --button-border: rgba(226, 232, 240, 0.4);
+  --theme-dark-bg: #080808;
+  --theme-dark-surface: #0f1012;
+  --theme-dark-surface-alt: #141519;
+  --theme-dark-border: rgba(226, 232, 240, 0.34);
+  --badge-saturation: 0.75;
+  --header-overlay-light: linear-gradient(120deg, rgba(30, 30, 30, 0.14) 0%, rgba(15, 15, 15, 0.12) 45%, rgba(8, 8, 8, 0.1) 100%);
+  --header-overlay-dark: linear-gradient(120deg, rgba(26, 26, 26, 0.45) 0%, rgba(13, 13, 13, 0.35) 45%, rgba(8, 8, 8, 0.28) 100%);
+  --header-radial-light: radial-gradient(circle at top right, rgba(148, 163, 184, 0.16), transparent 55%);
+  --header-radial-dark: radial-gradient(circle at top right, rgba(148, 163, 184, 0.2), transparent 55%);
+  --header-title-gradient-light: linear-gradient(to right, #1f2937, #111827, #030712);
+  --header-title-gradient-dark: linear-gradient(to right, #e2e8f0, #cbd5e1, #94a3b8);
+}
+
 body {
   font-family: var(--font-plus-jakarta-sans), sans-serif;
-  background-color: #111318;
-  color: #e5e7eb;
+  background-color: #f8fafc;
+  color: #1f2937;
   transition: background-color 0.3s, color 0.3s;
+}
+
+.dark body {
+  background-color: var(--theme-dark-bg);
+  color: #e5e7eb;
 }
 
 [data-reveal].reveal {
@@ -59,6 +185,36 @@ body {
 
 .button-shimmer:hover {
   animation: buttonShimmer 2s ease-in-out infinite;
+}
+
+html[data-theme="midnight"] [class*="bg-[var(--accent)]"] {
+  background-color: var(--button-bg) !important;
+  color: var(--button-text) !important;
+  border-color: var(--button-border) !important;
+  border-width: 1px;
+}
+
+html[data-theme="midnight"] [class*="hover:bg-[var(--accent-hover)]"]:hover {
+  background-color: var(--button-hover) !important;
+}
+
+html[data-theme="midnight"] .dark [class*="dark:bg-[#111318]"] {
+  background-color: var(--theme-dark-bg) !important;
+}
+
+html[data-theme="midnight"] .dark [class*="dark:bg-[#161a22]"] {
+  background-color: var(--theme-dark-surface) !important;
+}
+
+html[data-theme="midnight"] .dark [class*="dark:bg-[#1b202b]"] {
+  background-color: var(--theme-dark-surface-alt) !important;
+}
+
+html[data-theme="midnight"] .dark [class*="dark:border-slate-800"],
+html[data-theme="midnight"] .dark [class*="dark:border-slate-700"],
+html[data-theme="midnight"] .dark [class*="dark:border-slate-600"] {
+  border-color: var(--theme-dark-border) !important;
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.08);
 }
 
 @media (prefers-reduced-motion: reduce) {

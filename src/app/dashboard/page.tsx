@@ -19,6 +19,19 @@ type Assignment = {
 };
 
 type SubscriptionStatus = "free" | "premium";
+type ColorTheme = "default" | "green" | "sunset" | "midnight";
+
+const COLOR_THEME_KEY = "colorTheme";
+const COLOR_THEMES: ReadonlyArray<{ value: ColorTheme; label: string; swatch: string }> = [
+  { value: "default", label: "Default", swatch: "#6366f1" },
+  { value: "green", label: "Forest", swatch: "#10b981" },
+  { value: "sunset", label: "Sunset", swatch: "#f59e0b" },
+  { value: "midnight", label: "Midnight", swatch: "#e2e8f0" },
+];
+
+function isColorTheme(value: string | null): value is ColorTheme {
+  return value === "default" || value === "green" || value === "sunset" || value === "midnight";
+}
 
 function formatConflictTitles(titles: string[]) {
   if (titles.length <= 1) {
@@ -103,16 +116,8 @@ function getPanicBadgeClass(score: number) {
   return "border-rose-300 bg-rose-100 text-rose-700 dark:border-rose-400/50 dark:bg-rose-500/25 dark:text-rose-100";
 }
 
-function getPanicCardAccentClass(score: number) {
-  if (score < 35) {
-    return "border-l-[3px] border-l-emerald-500/80 dark:border-l-emerald-400/70";
-  }
-
-  if (score < 70) {
-    return "border-l-[3px] border-l-amber-500/80 dark:border-l-amber-400/70";
-  }
-
-  return "border-l-[3px] border-l-rose-500/80 dark:border-l-rose-400/70";
+function getPanicCardAccentClass() {
+  return "border-l-[3px] border-l-[color:var(--accent-soft-border)] dark:border-l-[color:var(--accent)]";
 }
 
 const FREEMIUM_ENABLED = process.env.NEXT_PUBLIC_ENABLE_FREEMIUM === "true";
@@ -166,6 +171,7 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const [dismissConflictBanner, setDismissConflictBanner] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [colorTheme, setColorTheme] = useState<ColorTheme>("default");
   const [defaultPriority, setDefaultPriority] = useState<"Low" | "Medium" | "High">("Medium");
   const [defaultView, setDefaultView] = useState<"card" | "list">("card");
   const [compactMode, setCompactMode] = useState(false);
@@ -175,6 +181,7 @@ export default function DashboardPage() {
   const [sortBy, setSortBy] = useState<"deadline" | "panic" | "course" | "priority">("deadline");
   const [filterCourse, setFilterCourse] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "completed">("active");
+  const badgeToneClass = colorTheme === "midnight" ? "saturate-[0.75]" : "";
 
   const deadlineConflict = useMemo(() => {
     const activeAssignments = assignments.filter((assignment) => !assignment.completed);
@@ -333,7 +340,7 @@ export default function DashboardPage() {
     if (!studyPlan) return [];
 
     const days = [
-      { name: "Monday", color: "indigo", bgColor: "bg-indigo-50 dark:bg-indigo-500/10", textColor: "text-indigo-700 dark:text-indigo-300", borderColor: "border-indigo-200 dark:border-indigo-500/30" },
+      { name: "Monday", color: "accent", bgColor: "bg-[var(--accent-soft-bg)] dark:bg-[var(--accent-soft-bg-dark)]", textColor: "text-[var(--accent-text)] dark:text-[var(--accent-text-dark)]", borderColor: "border-[color:var(--accent-soft-border)] dark:border-[color:var(--accent-soft-border-dark)]" },
       { name: "Tuesday", color: "violet", bgColor: "bg-violet-50 dark:bg-violet-500/10", textColor: "text-violet-700 dark:text-violet-300", borderColor: "border-violet-200 dark:border-violet-500/30" },
       { name: "Wednesday", color: "rose", bgColor: "bg-rose-50 dark:bg-rose-500/10", textColor: "text-rose-700 dark:text-rose-300", borderColor: "border-rose-200 dark:border-rose-500/30" },
       { name: "Thursday", color: "emerald", bgColor: "bg-emerald-50 dark:bg-emerald-500/10", textColor: "text-emerald-700 dark:text-emerald-300", borderColor: "border-emerald-200 dark:border-emerald-500/30" },
@@ -521,6 +528,24 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  const applyColorTheme = useCallback((nextTheme: ColorTheme) => {
+    setColorTheme(nextTheme);
+    document.documentElement.setAttribute("data-theme", nextTheme);
+    window.localStorage.setItem(COLOR_THEME_KEY, nextTheme);
+  }, []);
+
+  useEffect(() => {
+    const savedColorTheme = window.localStorage.getItem(COLOR_THEME_KEY);
+    if (isColorTheme(savedColorTheme)) {
+      setColorTheme(savedColorTheme);
+      document.documentElement.setAttribute("data-theme", savedColorTheme);
+      return;
+    }
+
+    document.documentElement.setAttribute("data-theme", "default");
+    window.localStorage.setItem(COLOR_THEME_KEY, "default");
   }, []);
 
   useEffect(() => {
@@ -1048,13 +1073,13 @@ export default function DashboardPage() {
       ) : null}
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="relative overflow-hidden rounded-3xl border border-slate-300/90 bg-slate-50/80 p-7 shadow-lg shadow-slate-200/30 md:p-8 dark:border-slate-800 dark:bg-[#161a22] dark:shadow-black/25">
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(99,102,241,0.12)_0%,rgba(139,92,246,0.10)_45%,rgba(244,63,94,0.08)_100%)] dark:bg-[linear-gradient(120deg,rgba(99,102,241,0.20)_0%,rgba(139,92,246,0.18)_45%,rgba(244,63,94,0.14)_100%)]" />
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.14),transparent_55%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(129,140,248,0.24),transparent_55%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[image:var(--header-overlay-light)] dark:bg-[image:var(--header-overlay-dark)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[image:var(--header-radial-light)] dark:bg-[image:var(--header-radial-dark)]" />
 
           <div className="relative flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
             <div className="space-y-2">
               <div className="flex items-center gap-3">
-                <h1 className="bg-gradient-to-r from-indigo-600 via-violet-600 to-rose-500 bg-clip-text text-4xl font-bold tracking-tight text-transparent md:text-5xl dark:from-indigo-300 dark:via-violet-300 dark:to-rose-300">Wrap It Up Dashboard</h1>
+                <h1 className="bg-[image:var(--header-title-gradient-light)] bg-clip-text text-4xl font-bold tracking-tight text-transparent md:text-5xl dark:bg-[image:var(--header-title-gradient-dark)]">Wrap It Up Dashboard</h1>
                 {FREEMIUM_ENABLED && (
                   <span
                     className={`rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ${
@@ -1077,7 +1102,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => handleOpenDraftModal()}
                   disabled={activeAssignments.length === 0}
-                  className="w-full rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-[#111111] transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-blue-400/40 dark:bg-blue-500/15 dark:text-slate-100 dark:hover:bg-blue-500/20"
+                  className="w-full rounded-xl border border-[color:var(--accent-soft-border)] bg-[var(--accent-soft-bg)] px-4 py-3 text-sm font-semibold text-[#111111] transition hover:bg-[var(--accent-soft-bg-hover)] disabled:cursor-not-allowed disabled:opacity-60 md:w-auto dark:border-[color:var(--accent-soft-border-dark)] dark:bg-[var(--accent-soft-bg-dark)] dark:text-slate-100 dark:hover:bg-[var(--accent-soft-bg-dark-hover)]"
                 >
                   Draft Email
                 </button>
@@ -1119,7 +1144,7 @@ export default function DashboardPage() {
                     setPriority("Medium");
                     setIsModalOpen(true);
                   }}
-                  className="w-full rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 md:w-auto"
+                  className="w-full rounded-xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-[var(--accent-shadow)] transition hover:bg-[var(--accent-hover)] md:w-auto"
                 >
                   + Add Assignment
                 </button>
@@ -1269,7 +1294,7 @@ export default function DashboardPage() {
               id="sort-by"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as "deadline" | "panic" | "course" | "priority")}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-600 dark:bg-[#161a22] dark:text-slate-200"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-600 dark:bg-[#161a22] dark:text-slate-200"
             >
               <option value="deadline">Deadline (soonest)</option>
               <option value="panic">Panic Score (highest)</option>
@@ -1287,7 +1312,7 @@ export default function DashboardPage() {
               id="filter-course"
               value={filterCourse}
               onChange={(e) => setFilterCourse(e.target.value)}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-600 dark:bg-[#161a22] dark:text-slate-200"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-600 dark:bg-[#161a22] dark:text-slate-200"
             >
               <option value="all">All Courses</option>
               {uniqueCourses.map((course) => (
@@ -1307,7 +1332,7 @@ export default function DashboardPage() {
                 onClick={() => setFilterStatus("all")}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                   filterStatus === "all"
-                    ? "bg-indigo-500 text-white"
+                    ? "bg-[var(--accent)] text-white"
                     : "bg-white text-[#555555] hover:bg-slate-100 dark:bg-[#161a22] dark:text-slate-400 dark:hover:bg-slate-700"
                 }`}
               >
@@ -1318,7 +1343,7 @@ export default function DashboardPage() {
                 onClick={() => setFilterStatus("active")}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                   filterStatus === "active"
-                    ? "bg-indigo-500 text-white"
+                    ? "bg-[var(--accent)] text-white"
                     : "bg-white text-[#555555] hover:bg-slate-100 dark:bg-[#161a22] dark:text-slate-400 dark:hover:bg-slate-700"
                 }`}
               >
@@ -1329,7 +1354,7 @@ export default function DashboardPage() {
                 onClick={() => setFilterStatus("completed")}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                   filterStatus === "completed"
-                    ? "bg-indigo-500 text-white"
+                    ? "bg-[var(--accent)] text-white"
                     : "bg-white text-[#555555] hover:bg-slate-100 dark:bg-[#161a22] dark:text-slate-400 dark:hover:bg-slate-700"
                 }`}
               >
@@ -1358,7 +1383,7 @@ export default function DashboardPage() {
                       <span
                         className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                           priorityLabel
-                        )}`}
+                        )} ${badgeToneClass}`}
                       >
                         {priorityLabel}
                       </span>
@@ -1404,9 +1429,7 @@ export default function DashboardPage() {
             return (
               <article
                 key={assignment.id}
-                className={`rounded-2xl border border-slate-300 bg-white shadow-md shadow-slate-200/35 dark:border-slate-800 dark:bg-[#161a22] dark:shadow-black/25 ${getPanicCardAccentClass(
-                  panicScore
-                )} ${compactMode ? "space-y-3 p-4" : "space-y-4 p-6"}`}
+                className={`rounded-2xl border border-slate-300 bg-white shadow-md shadow-slate-200/35 dark:border-slate-800 dark:bg-[#161a22] dark:shadow-black/25 ${getPanicCardAccentClass()} ${compactMode ? "space-y-3 p-4" : "space-y-4 p-6"}`}
               >
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -1414,7 +1437,7 @@ export default function DashboardPage() {
                     <span
                       className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                         priorityLabel
-                      )}`}
+                      )} ${badgeToneClass}`}
                     >
                       {priorityLabel}
                     </span>
@@ -1424,13 +1447,13 @@ export default function DashboardPage() {
 
                 <div className={`rounded-lg border border-slate-300 bg-slate-50 px-3 dark:border-slate-700 dark:bg-[#1b202b] ${compactMode ? "py-1.5" : "py-2"}`}>
                   <p className="text-xs uppercase tracking-wide text-[#777777] dark:text-slate-500">Countdown</p>
-                  <p className={`mt-1 font-semibold text-indigo-600 dark:text-indigo-300 ${compactMode ? "text-base" : "text-lg"}`}>{label}</p>
+                  <p className={`mt-1 font-semibold text-[var(--accent-text)] dark:text-[var(--accent-text-dark)] ${compactMode ? "text-base" : "text-lg"}`}>{label}</p>
                 </div>
 
                 <div
                   className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${getPanicBadgeClass(
                     panicScore
-                  )}`}
+                  )} ${badgeToneClass}`}
                 >
                   {panicLabel} · {panicScore}
                 </div>
@@ -1445,7 +1468,7 @@ export default function DashboardPage() {
                       type="button"
                       onClick={() => void startUpgradeCheckout()}
                       disabled={upgradeLoading}
-                      className="rounded-lg bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-[var(--accent-shadow)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {upgradeLoading ? "Redirecting..." : "Upgrade"}
                     </button>
@@ -1454,7 +1477,7 @@ export default function DashboardPage() {
                       type="button"
                       onClick={() => handleVibe(assignment)}
                       disabled={vibeLoading[assignment.id]}
-                      className="rounded-lg bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-[var(--accent-shadow)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
                     </button>
@@ -1534,7 +1557,7 @@ export default function DashboardPage() {
                               <span
                                 className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                                   priorityLabel
-                                )}`}
+                                )} ${badgeToneClass}`}
                               >
                                 {priorityLabel}
                               </span>
@@ -1577,9 +1600,7 @@ export default function DashboardPage() {
                 return (
                   <div
                     key={assignment.id}
-                    className={`rounded-2xl border border-slate-300 bg-white px-4 py-3 shadow-sm shadow-slate-200/25 dark:border-slate-800 dark:bg-[#161a22] dark:shadow-black/20 ${getPanicCardAccentClass(
-                      panicScore
-                    )}`}
+                    className={`rounded-2xl border border-slate-300 bg-white px-4 py-3 shadow-sm shadow-slate-200/25 dark:border-slate-800 dark:bg-[#161a22] dark:shadow-black/20 ${getPanicCardAccentClass()}`}
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
@@ -1589,18 +1610,18 @@ export default function DashboardPage() {
                             <span
                               className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                                 priorityLabel
-                              )}`}
+                              )} ${badgeToneClass}`}
                             >
                               {priorityLabel}
                             </span>
                           </div>
                           <p className="text-xs text-[#555555] dark:text-slate-400">{assignment.course}</p>
                         </div>
-                        <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{label}</div>
+                        <div className="text-sm font-semibold text-[var(--accent-text)] dark:text-[var(--accent-text-dark)]">{label}</div>
                         <div
                           className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${getPanicBadgeClass(
                             panicScore
-                          )}`}
+                          )} ${badgeToneClass}`}
                         >
                           {panicLabel} · {panicScore}
                         </div>
@@ -1612,7 +1633,7 @@ export default function DashboardPage() {
                             type="button"
                             onClick={() => void startUpgradeCheckout()}
                             disabled={upgradeLoading}
-                            className="rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-[var(--accent-shadow)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {upgradeLoading ? "Redirecting..." : "Upgrade"}
                           </button>
@@ -1621,7 +1642,7 @@ export default function DashboardPage() {
                             type="button"
                             onClick={() => handleVibe(assignment)}
                             disabled={vibeLoading[assignment.id]}
-                            className="rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-[var(--accent-shadow)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {vibeLoading[assignment.id] ? "Thinking..." : "Diagnose"}
                           </button>
@@ -1680,7 +1701,7 @@ export default function DashboardPage() {
                             <span
                               className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                                 priorityLabel
-                              )}`}
+                              )} ${badgeToneClass}`}
                             >
                               {priorityLabel}
                             </span>
@@ -1739,14 +1760,14 @@ export default function DashboardPage() {
                                 <span
                                   className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getPriorityBadgeClass(
                                     priorityLabel
-                                  )}`}
+                                  )} ${badgeToneClass}`}
                                 >
                                   {priorityLabel}
                                 </span>
                               </div>
                               <p className="text-xs text-[#555555] line-through dark:text-slate-400">{assignment.course}</p>
                             </div>
-                            <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{label}</div>
+                            <div className="text-sm font-semibold text-[var(--accent-text)] dark:text-[var(--accent-text-dark)]">{label}</div>
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -1797,7 +1818,7 @@ export default function DashboardPage() {
                   required
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
@@ -1811,7 +1832,7 @@ export default function DashboardPage() {
                   required
                   value={course}
                   onChange={(event) => setCourse(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
@@ -1825,7 +1846,7 @@ export default function DashboardPage() {
                   required
                   value={deadline}
                   onChange={(event) => setDeadline(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
@@ -1841,7 +1862,7 @@ export default function DashboardPage() {
                   required
                   value={estimatedHours}
                   onChange={(event) => setEstimatedHours(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
@@ -1853,7 +1874,7 @@ export default function DashboardPage() {
                   id="priority"
                   value={priority}
                   onChange={(event) => setPriority(event.target.value as "Low" | "Medium" | "High")}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 >
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
@@ -1872,7 +1893,7 @@ export default function DashboardPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg bg-[var(--accent)] px-4 py-2 font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? "Saving..." : "Save"}
                 </button>
@@ -1896,7 +1917,7 @@ export default function DashboardPage() {
                   id="syllabus"
                   type="file"
                   onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                 />
               </div>
 
@@ -1917,7 +1938,7 @@ export default function DashboardPage() {
                 <button
                   type="submit"
                   disabled={uploadLoading}
-                  className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg bg-[var(--accent)] px-4 py-2 font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {uploadLoading ? "Processing..." : "Upload"}
                 </button>
@@ -1946,7 +1967,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => void startUpgradeCheckout()}
                 disabled={upgradeLoading}
-                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg bg-[var(--accent)] px-4 py-2 font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {upgradeLoading ? "Redirecting..." : "Upgrade"}
               </button>
@@ -1960,8 +1981,8 @@ export default function DashboardPage() {
           <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-300 bg-white p-6 shadow-xl shadow-slate-200/35 dark:border-slate-700/70 dark:bg-[#161a22] dark:shadow-black/35">
             {/* Header */}
             <div className="mb-6 flex items-center gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
-              <div className="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-500/20">
-                <Calendar className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              <div className="rounded-lg border border-[color:var(--accent-soft-border)] bg-[var(--accent-soft-bg)] p-2 dark:border-[color:var(--accent-soft-border-dark)] dark:bg-[var(--accent-soft-bg-dark)]">
+                <Calendar className="h-5 w-5 text-[var(--accent-text)] dark:text-[var(--accent-text-dark)]" />
               </div>
               <h2 className="text-2xl font-semibold text-[#111111] dark:text-white">7-Day Study Plan</h2>
             </div>
@@ -2070,7 +2091,7 @@ export default function DashboardPage() {
                     id="draftAssignment"
                     value={draftAssignmentId}
                     onChange={(event) => setDraftAssignmentId(event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                   >
                     {activeAssignments.map((assignment) => (
                       <option key={assignment.id} value={assignment.id}>
@@ -2084,7 +2105,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => void handleGenerateDraft()}
                   disabled={draftLoading}
-                  className="w-full rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {draftLoading ? "Generating..." : "Generate"}
                 </button>
@@ -2115,7 +2136,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => void handleCopyDraft()}
                 disabled={!draftSubject || !draftBody}
-                className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg bg-[var(--accent)] px-4 py-2 font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Copy
               </button>
@@ -2140,7 +2161,7 @@ export default function DashboardPage() {
                   onClick={() => setTheme("light")}
                   className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
                     theme === "light"
-                      ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/20 dark:text-indigo-300"
+                      ? "border-[color:var(--accent)] bg-[var(--accent-soft-bg)] text-[var(--accent-text)] dark:border-[color:var(--accent)] dark:bg-[var(--accent-soft-bg-dark)] dark:text-[var(--accent-text-dark)]"
                       : "border-slate-300 bg-white text-[#1a1a1a] hover:bg-slate-50 dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-300 dark:hover:bg-slate-700"
                   }`}
                 >
@@ -2152,7 +2173,7 @@ export default function DashboardPage() {
                   onClick={() => setTheme("dark")}
                   className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
                     theme === "dark"
-                      ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/20 dark:text-indigo-300"
+                      ? "border-[color:var(--accent)] bg-[var(--accent-soft-bg)] text-[var(--accent-text)] dark:border-[color:var(--accent)] dark:bg-[var(--accent-soft-bg-dark)] dark:text-[var(--accent-text-dark)]"
                       : "border-slate-300 bg-white text-[#1a1a1a] hover:bg-slate-50 dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-300 dark:hover:bg-slate-700"
                   }`}
                 >
@@ -2164,13 +2185,41 @@ export default function DashboardPage() {
                   onClick={() => setTheme("system")}
                   className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
                     theme === "system"
-                      ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/20 dark:text-indigo-300"
+                      ? "border-[color:var(--accent)] bg-[var(--accent-soft-bg)] text-[var(--accent-text)] dark:border-[color:var(--accent)] dark:bg-[var(--accent-soft-bg-dark)] dark:text-[var(--accent-text-dark)]"
                       : "border-slate-300 bg-white text-[#1a1a1a] hover:bg-slate-50 dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-300 dark:hover:bg-slate-700"
                   }`}
                 >
                   <Settings size={16} className="mx-auto" />
                   <span className="mt-1 block">System</span>
                 </button>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-sm font-medium text-[#1a1a1a] dark:text-slate-200">Color Scheme</p>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  {COLOR_THEMES.map((option) => {
+                    const active = colorTheme === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => applyColorTheme(option.value)}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                          active
+                            ? "border-[color:var(--accent)] bg-[var(--accent-soft-bg)] text-[var(--accent-text)] dark:border-[color:var(--accent)] dark:bg-[var(--accent-soft-bg-dark)] dark:text-[var(--accent-text-dark)]"
+                            : "border-slate-300 bg-white text-[#1a1a1a] hover:bg-slate-50 dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-300 dark:hover:bg-slate-700"
+                        }`}
+                        aria-label={`Use ${option.label} theme`}
+                      >
+                        <span
+                          className={`mx-auto block h-5 w-5 rounded-full border ${active ? "border-white/70" : "border-black/10"}`}
+                          style={{ backgroundColor: option.swatch }}
+                        />
+                        <span className="mt-1 block">{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -2188,7 +2237,7 @@ export default function DashboardPage() {
                     id="default-priority"
                     value={tempDefaultPriority}
                     onChange={(e) => setTempDefaultPriority(e.target.value as "Low" | "Medium" | "High")}
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                   >
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
@@ -2204,7 +2253,7 @@ export default function DashboardPage() {
                     id="default-view"
                     value={tempDefaultView}
                     onChange={(e) => setTempDefaultView(e.target.value as "card" | "list")}
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-indigo-400/35 transition focus:border-indigo-400 focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none ring-[color:var(--accent-ring)] transition focus:border-[color:var(--accent)] focus:ring dark:border-slate-700 dark:bg-[#1b202b] dark:text-slate-100"
                   >
                     <option value="card">Card View</option>
                     <option value="list">List View</option>
@@ -2228,7 +2277,7 @@ export default function DashboardPage() {
                     type="button"
                     onClick={() => setTempCompactMode(!tempCompactMode)}
                     className={`relative ml-4 h-6 w-11 flex-shrink-0 rounded-full transition ${
-                      tempCompactMode ? "bg-indigo-500" : "bg-slate-300 dark:bg-slate-600"
+                      tempCompactMode ? "bg-[var(--accent)]" : "bg-slate-300 dark:bg-slate-600"
                     }`}
                   >
                     <span
@@ -2269,7 +2318,7 @@ export default function DashboardPage() {
                   
                   setIsSettingsOpen(false);
                 }}
-                className="rounded-lg bg-indigo-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400"
+                className="rounded-lg bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]"
               >
                 Save Changes
               </button>

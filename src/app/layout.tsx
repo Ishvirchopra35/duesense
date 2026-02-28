@@ -20,7 +20,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-theme="default" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => {
+  try {
+    const saved = window.localStorage.getItem("colorTheme");
+    const nextTheme = saved === "green" || saved === "sunset" || saved === "midnight" || saved === "default" ? saved : "default";
+    document.documentElement.setAttribute("data-theme", nextTheme);
+  } catch {
+    document.documentElement.setAttribute("data-theme", "default");
+  }
+})();`,
+          }}
+        />
+      </head>
       <body className={`${plusJakartaSans.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="duesense-theme">
           {children}
