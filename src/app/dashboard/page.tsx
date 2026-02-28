@@ -160,7 +160,7 @@ export default function DashboardPage() {
   const [draftBody, setDraftBody] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
   const [draftAssignmentId, setDraftAssignmentId] = useState("");
-  const [studyPlan, setStudyPlan] = useState<string | Array<{ day: string; tasks: string[] }> | null>(null);
+  const [studyPlan, setStudyPlan] = useState<string | Array<{ day: string; date?: string; tasks: string[] }> | null>(null);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
   const [studyPlanError, setStudyPlanError] = useState<string | null>(null);
   const [surviveToday, setSurviveToday] = useState(false);
@@ -325,68 +325,70 @@ export default function DashboardPage() {
     [activeAssignments]
   );
 
-  const studyPlanLines = useMemo(
-    () => {
-      if (!studyPlan) return [];
-      if (typeof studyPlan === "string") {
-        return studyPlan.split("\n").map((line) => line.trim()).filter(Boolean);
-      }
-      return [];
-    },
-    [studyPlan]
-  );
-
   const parsedStudyPlan = useMemo(() => {
     if (!studyPlan) return [];
 
-    const days = [
-      { name: "Monday", color: "accent", bgColor: "bg-[var(--accent-soft-bg)] dark:bg-[var(--accent-soft-bg-dark)]", textColor: "text-[var(--accent-text)] dark:text-[var(--accent-text-dark)]", borderColor: "border-[color:var(--accent-soft-border)] dark:border-[color:var(--accent-soft-border-dark)]" },
-      { name: "Tuesday", color: "violet", bgColor: "bg-violet-50 dark:bg-violet-500/10", textColor: "text-violet-700 dark:text-violet-300", borderColor: "border-violet-200 dark:border-violet-500/30" },
-      { name: "Wednesday", color: "rose", bgColor: "bg-rose-50 dark:bg-rose-500/10", textColor: "text-rose-700 dark:text-rose-300", borderColor: "border-rose-200 dark:border-rose-500/30" },
-      { name: "Thursday", color: "emerald", bgColor: "bg-emerald-50 dark:bg-emerald-500/10", textColor: "text-emerald-700 dark:text-emerald-300", borderColor: "border-emerald-200 dark:border-emerald-500/30" },
-      { name: "Friday", color: "amber", bgColor: "bg-amber-50 dark:bg-amber-500/10", textColor: "text-amber-700 dark:text-amber-300", borderColor: "border-amber-200 dark:border-amber-500/30" },
-      { name: "Saturday", color: "sky", bgColor: "bg-sky-50 dark:bg-sky-500/10", textColor: "text-sky-700 dark:text-sky-300", borderColor: "border-sky-200 dark:border-sky-500/30" },
-      { name: "Sunday", color: "orange", bgColor: "bg-orange-50 dark:bg-orange-500/10", textColor: "text-orange-700 dark:text-orange-300", borderColor: "border-orange-200 dark:border-orange-500/30" }
-    ];
+    const dayStyleByName: Record<string, { bgColor: string; textColor: string; borderColor: string }> = {
+      Monday: { bgColor: "bg-[var(--accent-soft-bg)] dark:bg-[var(--accent-soft-bg-dark)]", textColor: "text-[var(--accent-text)] dark:text-[var(--accent-text-dark)]", borderColor: "border-[color:var(--accent-soft-border)] dark:border-[color:var(--accent-soft-border-dark)]" },
+      Tuesday: { bgColor: "bg-violet-50 dark:bg-violet-500/10", textColor: "text-violet-700 dark:text-violet-300", borderColor: "border-violet-200 dark:border-violet-500/30" },
+      Wednesday: { bgColor: "bg-rose-50 dark:bg-rose-500/10", textColor: "text-rose-700 dark:text-rose-300", borderColor: "border-rose-200 dark:border-rose-500/30" },
+      Thursday: { bgColor: "bg-emerald-50 dark:bg-emerald-500/10", textColor: "text-emerald-700 dark:text-emerald-300", borderColor: "border-emerald-200 dark:border-emerald-500/30" },
+      Friday: { bgColor: "bg-amber-50 dark:bg-amber-500/10", textColor: "text-amber-700 dark:text-amber-300", borderColor: "border-amber-200 dark:border-amber-500/30" },
+      Saturday: { bgColor: "bg-sky-50 dark:bg-sky-500/10", textColor: "text-sky-700 dark:text-sky-300", borderColor: "border-sky-200 dark:border-sky-500/30" },
+      Sunday: { bgColor: "bg-orange-50 dark:bg-orange-500/10", textColor: "text-orange-700 dark:text-orange-300", borderColor: "border-orange-200 dark:border-orange-500/30" },
+    };
+
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+
+    const orderedDays = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + index);
+      const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
+      const displayLabel = date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+      const style = dayStyleByName[dayName] ?? dayStyleByName.Monday;
+      return {
+        dayName,
+        displayLabel,
+        ...style,
+      };
+    });
 
     // If studyPlan is already structured (array format from API)
     if (Array.isArray(studyPlan)) {
-      return studyPlan.map((dayData) => {
-        const dayInfo = days.find((d) => d.name.toLowerCase() === dayData.day.toLowerCase()) || days[0];
+      return orderedDays.map((dayInfo, index) => {
+        const dayData = studyPlan[index];
         return {
           ...dayInfo,
-          tasks: dayData.tasks || [],
+          tasks: Array.isArray(dayData?.tasks) ? dayData.tasks : [],
         };
       });
     }
 
     // Legacy: Parse string format
     const lines = studyPlan.split("\n").map((line) => line.trim()).filter(Boolean);
-    const result: Array<{ name: string; color: string; bgColor: string; textColor: string; borderColor: string; tasks: string[] }> = [];
-
-    let currentDay: { name: string; color: string; bgColor: string; textColor: string; borderColor: string; tasks: string[] } | null = null;
+    const tasksByDay = Array.from({ length: 7 }, () => [] as string[]);
+    let currentDayIndex = -1;
 
     for (const line of lines) {
-      const dayMatch = days.find((d) => line.toLowerCase().startsWith(d.name.toLowerCase()));
-      
-      if (dayMatch) {
-        if (currentDay) {
-          result.push(currentDay);
-        }
-        currentDay = { ...dayMatch, tasks: [] };
-      } else if (currentDay && line) {
+      const matchedIndex = orderedDays.findIndex((day) =>
+        line.toLowerCase().startsWith(day.dayName.toLowerCase())
+      );
+
+      if (matchedIndex >= 0) {
+        currentDayIndex = matchedIndex;
+      } else if (currentDayIndex >= 0 && line) {
         const cleanTask = line.replace(/^[-•*]\s*/, "").trim();
         if (cleanTask) {
-          currentDay.tasks.push(cleanTask);
+          tasksByDay[currentDayIndex].push(cleanTask);
         }
       }
     }
 
-    if (currentDay) {
-      result.push(currentDay);
-    }
-
-    return result;
+    return orderedDays.map((dayInfo, index) => ({
+      ...dayInfo,
+      tasks: tasksByDay[index],
+    }));
   }, [studyPlan]);
 
   const loadAssignments = useCallback(async (currentUserId: string) => {
@@ -913,11 +915,15 @@ export default function DashboardPage() {
       const response = await fetch("/api/study-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assignments: studyPlanAssignments }),
+        body: JSON.stringify({
+          assignments: studyPlanAssignments,
+          todayIso: new Date().toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
       });
 
       const contentType = response.headers.get("content-type") ?? "";
-      const result: { plan?: string | Array<{ day: string; tasks: string[] }>; error?: string } = contentType.includes("application/json")
+      const result: { plan?: string | Array<{ day: string; date?: string; tasks: string[] }>; error?: string } = contentType.includes("application/json")
         ? await response.json()
         : {};
 
@@ -1996,13 +2002,13 @@ export default function DashboardPage() {
             ) : parsedStudyPlan.length > 0 ? (
               <div className="space-y-4">
                 {parsedStudyPlan.map((day, index) => (
-                  <div key={day.name}>
+                  <div key={day.displayLabel}>
                     <div className={`rounded-xl border p-4 ${day.borderColor} ${day.bgColor}`}>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                         {/* Day Label */}
                         <div className="flex-shrink-0 sm:w-32">
-                          <span className={`text-sm font-bold uppercase tracking-wide ${day.textColor}`}>
-                            {day.name}
+                          <span className={`text-sm font-bold ${day.textColor}`}>
+                            {day.displayLabel}
                           </span>
                         </div>
                         
@@ -2012,7 +2018,7 @@ export default function DashboardPage() {
                             <div className="flex flex-wrap gap-2">
                               {day.tasks.map((task, taskIndex) => (
                                 <span
-                                  key={`${day.name}-${taskIndex}`}
+                                  key={`${day.dayName}-${taskIndex}`}
                                   className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-[#1a1a1a] dark:border-slate-600 dark:bg-[#1b202b] dark:text-slate-200"
                                 >
                                   {task}
